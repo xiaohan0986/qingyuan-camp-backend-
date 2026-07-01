@@ -1,0 +1,11 @@
+{
+    "site_name": "签务通后台管理系统",
+    "site_url": "http://localhost/qianwutong",
+    "api_url": "http://localhost/qianwutong/api",
+    "upload_max_size": "10",
+    "allow_register": "0",
+    "watermark_enabled": "1",
+    "watermark_text": "签务通",
+    "timezone": "Asia/Shanghai",
+    "language": "zh-CN"
+}

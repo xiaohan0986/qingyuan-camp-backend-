@@ -1,0 +1,271 @@
+<!-- 新增/编辑弹窗 -->
+<div class="modal-overlay" id="customerModal">
+    <div class="modal" style="max-width: 900px; max-height: 85vh;">
+        <div class="modal-header">
+            <h3 id="modalTitle">新增客户</h3>
+            <button class="modal-close" onclick="closeModal()">×</button>
+        </div>
+        <div class="modal-body" style="max-height: calc(85vh - 140px); overflow-y: auto;">
+            <form id="customerForm">
+                <input type="hidden" id="customerId">
+                
+                <!-- 第一部分：基础信息（必填） -->
+                <div style="margin-bottom: 24px;">
+                    <h4 style="margin: 0 0 16px 0; padding: 12px; background: linear-gradient(135deg, #1890ff 0%, #40a9ff 100%); color: white; border-radius: 8px; font-size: 15px;">📋 一、基础信息 <span style="font-size: 12px; opacity: 0.9;">（必填）</span></h4>
+                    
+                    <div class="form-group">
+                        <label>客户名称 <span style="color: #f5222d;">*</span></label>
+                        <div style="display: flex; gap: 8px; align-items: flex-start;">
+                            <div style="flex: 1;">
+                                <input type="text" id="customerName" required placeholder="请输入手机号/姓名/ID 查询用户" readonly style="background: #fafafa;">
+                                <input type="hidden" id="userId">
+                            </div>
+                            <button type="button" class="btn btn-primary" onclick="showUserSelector()" style="padding: 11px 20px;">🔍 选择用户</button>
+                        </div>
+                        <div style="margin-top: 8px; font-size: 12px; color: #8c8c8c;">💡 必须从用户管理中选择已有用户，不能自行录入</div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group"><label>年龄 <span style="color: #f5222d;">*</span></label><input type="number" id="age" required placeholder="请输入年龄" min="18" max="100"></div>
+                        <div class="form-group"><label>电话 <span style="color: #f5222d;">*</span></label><input type="text" id="phone" required placeholder="请输入联系电话"></div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group"><label>学历 <span style="color: #f5222d;">*</span></label>
+                            <select id="education" required>
+                                <option value="">请选择</option>
+                                <option value="初中">初中</option>
+                                <option value="高中">高中</option>
+                                <option value="中专">中专</option>
+                                <option value="大专">大专</option>
+                                <option value="本科">本科</option>
+                                <option value="硕士">硕士</option>
+                                <option value="博士">博士</option>
+                            </select>
+                        </div>
+                        <div class="form-group"><label>邮箱 <span style="color: #f5222d;">*</span></label><input type="email" id="email" required placeholder="请输入邮箱地址"></div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group"><label>微信 <span style="color: #f5222d;">*</span></label><input type="text" id="wechat" required placeholder="请输入微信号"></div>
+                        <div class="form-group"><label>国家 <span style="color: #f5222d;">*</span></label><select id="country_select" required onchange="loadPositionsByCountry()"><option value="">请选择</option><option value="日本">日本</option><option value="韩国">韩国</option><option value="新加坡">新加坡</option><option value="美国">美国</option><option value="英国">英国</option><option value="澳大利亚">澳大利亚</option></select></div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group"><label>岗位 <span style="color: #f5222d;">*</span></label><select id="position_id" required onchange="checkCountryBeforePosition()"><option value="0">请先选择国家</option></select></div>
+                        <div class="form-group"><label>签证类型 <span style="color: #f5222d;">*</span></label>
+                            <select id="visa_type" required>
+                                <option value="">请选择</option>
+                                <option value="旅游签证">旅游签证</option>
+                                <option value="工作签证">工作签证</option>
+                                <option value="留学签证">留学签证</option>
+                                <option value="商务签证">商务签证</option>
+                                <option value="探亲签证">探亲签证</option>
+                                <option value="永住签证">永住签证</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group"><label>来源 <span style="color: #f5222d;">*</span></label><select id="source" required><option value="">请选择</option><option value="线上咨询">线上咨询</option><option value="线下活动">线下活动</option><option value="客户推荐">客户推荐</option><option value="社交媒体">社交媒体</option><option value="其他">其他</option></select></div>
+                        <div class="form-group"><label>销售顾问 <span style="color: #f5222d;">*</span></label><select id="sales_user_id" required><option value="0">请选择</option></select></div>
+                    </div>
+                </div>
+                
+                <!-- 第二部分：基本情况（非必填） -->
+                <div style="margin-bottom: 24px;">
+                    <h4 style="margin: 0 0 16px 0; padding: 12px; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; border-radius: 8px; font-size: 15px;">📝 二、基本情况 <span style="font-size: 12px; opacity: 0.9;">（非必填）</span></h4>
+                    
+                    <div class="form-row">
+                        <div class="form-group"><label>婚姻状况</label>
+                            <select id="marital_status">
+                                <option value="">请选择</option>
+                                <option value="未婚">未婚</option>
+                                <option value="已婚">已婚</option>
+                                <option value="离异">离异</option>
+                                <option value="丧偶">丧偶</option>
+                            </select>
+                        </div>
+                        <div class="form-group"><label>子女状况</label>
+                            <select id="children_status">
+                                <option value="">请选择</option>
+                                <option value="无子女">无子女</option>
+                                <option value="有子女">有子女</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group"><label>工作状况</label>
+                            <select id="work_status">
+                                <option value="">请选择</option>
+                                <option value="在职">在职</option>
+                                <option value="离职">离职</option>
+                                <option value="自由职业">自由职业</option>
+                                <option value="学生">学生</option>
+                                <option value="退休">退休</option>
+                                <option value="其他">其他</option>
+                            </select>
+                        </div>
+                        <div class="form-group"><label>籍贯</label><input type="text" id="hometown" placeholder="例如：北京朝阳"></div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group"><label>流水状况</label><input type="text" id="flow_status" placeholder="例如：月流水 2 万"></div>
+                        <div class="form-group"><label>社保状况</label><input type="text" id="social_security_status" placeholder="例如：已交 5 年"></div>
+                    </div>
+                    
+                    <div class="form-group"><label>技能</label><input type="text" id="skills" placeholder="例如：日语 N1、IT 技能、厨师证等"></div>
+                    
+                    <div class="form-row">
+                        <div class="form-group"><label>车辆</label>
+                            <select id="vehicle">
+                                <option value="">请选择</option>
+                                <option value="无">无</option>
+                                <option value="有">有</option>
+                            </select>
+                        </div>
+                        <div class="form-group"><label>房产</label>
+                            <select id="property">
+                                <option value="">请选择</option>
+                                <option value="无">无</option>
+                                <option value="有">有</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group"><label>财务状况</label><input type="text" id="financial_status" placeholder="例如：存款 50 万，年收入 30 万"></div>
+                </div>
+                
+                <!-- 第三部分：所需资料 -->
+                <div style="margin-bottom: 24px;">
+                    <h4 style="margin: 0 0 16px 0; padding: 12px; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; border-radius: 8px; font-size: 15px;">📎 三、所需资料 <span style="font-size: 12px; opacity: 0.9;">（点击按钮添加）</span></h4>
+                    
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;">
+                        <button type="button" class="doc-btn" onclick="addDocField('无犯罪证明')">📄 无犯罪证明</button>
+                        <button type="button" class="doc-btn" onclick="addDocField('工资流水')">💰 工资流水</button>
+                        <button type="button" class="doc-btn" onclick="addDocField('社保证明')">🏥 社保证明</button>
+                        <button type="button" class="doc-btn" onclick="addDocField('工作证明')">💼 工作证明</button>
+                        <button type="button" class="doc-btn" onclick="addDocField('签证申请表')">📝 签证申请表</button>
+                        <button type="button" class="doc-btn" onclick="addDocField('身份证')">🆔 身份证</button>
+                        <button type="button" class="doc-btn" onclick="addDocField('结婚证')">💍 结婚证</button>
+                        <button type="button" class="doc-btn" onclick="addDocField('户口本')">📕 户口本</button>
+                        <button type="button" class="doc-btn" onclick="addDocField('机动车证')">🚗 机动车证</button>
+                        <button type="button" class="doc-btn" onclick="addDocField('房产证')">🏠 房产证</button>
+                        <button type="button" class="doc-btn" onclick="addDocField('护照')">🛂 护照</button>
+                        <button type="button" class="doc-btn" onclick="addDocField('2 寸白底照片')">📷 2 寸白底照片</button>
+                        <button type="button" class="doc-btn" onclick="addDocField('其他')">📦 其他</button>
+                    </div>
+                    
+                    <div id="docFieldsContainer" style="display: flex; flex-direction: column; gap: 12px;">
+                        <!-- 动态生成的文件上传框将放在这里 -->
+                    </div>
+                </div>
+                
+                <!-- 办理进度 -->
+                <div style="margin-bottom: 24px;">
+                    <h4 style="margin: 0 0 16px 0; padding: 12px; background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); color: white; border-radius: 8px; font-size: 15px;">📈 办理进度</h4>
+                    
+                    <div id="progressHistory" style="margin-bottom: 16px; padding: 12px; background: #fafafa; border-radius: 8px; max-height: 150px; overflow-y: auto;">
+                        <div style="color: #8c8c8c; text-align: center;">暂无进度记录</div>
+                    </div>
+                    
+                    <div style="display: flex; gap: 12px;">
+                        <input type="text" id="progressInput" placeholder="输入正在办理的项目，如：提交移民局审核资料" style="flex: 1; padding: 11px 14px; border: 2px solid #f0f0f0; border-radius: 10px; font-size: 14px;">
+                        <button type="button" class="btn btn-primary" onclick="addProgress()" style="padding: 11px 24px;">⏱️ 更新进度</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal()">取消</button>
+            <button class="btn btn-primary" onclick="saveCustomer()">保存</button>
+        </div>
+    </div>
+</div>
+
+<style>
+.doc-btn {
+    padding: 8px 16px;
+    background: linear-gradient(135deg, #1890ff 0%, #40a9ff 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+.doc-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(102,126,234,0.4);
+}
+.doc-field {
+    padding: 16px;
+    background: #fafafa;
+    border-radius: 10px;
+    border: 2px solid #f0f0f0;
+}
+.doc-field-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+.doc-field-title {
+    font-weight: 600;
+    color: #262626;
+    font-size: 14px;
+}
+.doc-field-remove {
+    background: #fff2f0;
+    color: #cf1322;
+    border: none;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+}
+.doc-field-remove:hover {
+    background: #ffccc7;
+}
+.doc-upload-area {
+    border: 2px dashed #d9d9d9;
+    border-radius: 8px;
+    padding: 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+.doc-upload-area:hover {
+    border-color: #1890ff;
+    background: #f6ffed;
+}
+.doc-upload-area input[type="file"] {
+    display: none;
+}
+.doc-preview {
+    margin-top: 12px;
+    padding: 8px 12px;
+    background: white;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+}
+.progress-item {
+    padding: 8px 12px;
+    background: white;
+    border-radius: 6px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    border-left: 3px solid #1890ff;
+}
+.progress-time {
+    color: #8c8c8c;
+    font-size: 12px;
+    margin-right: 8px;
+}
+</style>
+
+<!-- 用户选择器弹窗 -->

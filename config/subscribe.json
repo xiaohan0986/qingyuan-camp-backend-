@@ -1,0 +1,10 @@
+{
+    "enabled": "1",
+    "template_id": "ZYhzeVILrkPxDQ97btwPbLaEkWOdN17B6grs9ObNluw",
+    "template_name": "签证订单办理通知",
+    "auto_subscribe": "1",
+    "subscribe_page": "pages\/progress\/progress",
+    "send_on_progress_update": "1",
+    "created_at": "2026-05-20 18:49:25",
+    "updated_at": "2026-05-20 18:49:25"
+}

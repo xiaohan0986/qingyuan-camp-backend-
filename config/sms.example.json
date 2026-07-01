@@ -1,0 +1,10 @@
+{
+    "enabled": "0",
+    "platform": "aliyun",
+    "access_key_id": "",
+    "access_key_secret": "",
+    "sign_name": "",
+    "template_code": "",
+    "template_content": "验证码${code}，您正在进行身份验证，若非本人操作，请勿泄露。",
+    "test_phone": ""
+}

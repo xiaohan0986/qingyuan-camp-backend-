@@ -1,0 +1,15 @@
+{
+    "site_name": "青园营地",
+    "site_url": "https:\/\/shop.auba.cn",
+    "api_url": "https:\/\/shop.auba.cn\/api",
+    "upload_max_size": "10",
+    "allow_register": "0",
+    "watermark_enabled": "1",
+    "watermark_text": "青园营地",
+    "timezone": "Asia\/Shanghai",
+    "language": "zh-CN",
+    "miniprogram_appid": "wxa1d87433a193a38b",
+    "miniprogram_secret": "c575f21feca581fecf27b0267c72d015",
+    "auto_detected_domain": "http:\/\/localhost\/shop.auba.cn",
+    "last_domain_check": "2026-05-20 18:49:02"
+}

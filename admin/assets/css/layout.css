@@ -1,0 +1,43 @@
+/**
+ * 通用布局样式 - 侧边栏展开/收起支持
+ * 所有管理页面共用
+ */
+
+/* 主体布局 */
+.admin-body {
+    display: flex;
+    min-height: 100vh;
+}
+
+/* 主内容区域 */
+.main-content {
+    flex: 1;
+    margin-left: 256px;  /* 12px 间距 + 232px 侧边栏 + 12px 间距 */
+    margin-right: 0;
+    min-width: 0;
+}
+
+/* 侧边栏收起时的主内容区域 */
+.admin-body.sidebar-collapsed .main-content,
+body.sidebar-collapsed .main-content {
+    margin-left: 84px;  /* 12px 间距 + 60px 侧边栏 + 12px 间距 */
+    margin-right: 0;
+}
+
+/* 内容包装器 */
+.content-wrapper {
+    margin: 0 8px 0 12px;
+    padding: 32px 32px 24px 32px;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+    .main-content {
+        margin-left: 0;
+    }
+    
+    .admin-body.sidebar-collapsed .main-content,
+    body.sidebar-collapsed .main-content {
+        margin-left: 0;
+    }
+}

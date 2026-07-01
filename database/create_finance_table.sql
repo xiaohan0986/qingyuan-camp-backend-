@@ -1,0 +1,27 @@
+-- 创建财务记录表
+CREATE TABLE IF NOT EXISTS finance_records (
+    id INT AUTO_INCREMENT PRIMARY KEY COMMENT 'ID',
+    type VARCHAR(20) NOT NULL COMMENT '类型：income=收入，expense=支出',
+    amount DECIMAL(10,2) NOT NULL DEFAULT 0 COMMENT '金额',
+    title VARCHAR(200) NOT NULL COMMENT '摘要',
+    ref_no VARCHAR(100) DEFAULT NULL COMMENT '关联单号',
+    date DATE NOT NULL COMMENT '日期',
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' COMMENT '状态：paid=已收/已付，unpaid=未收/未付，pending=待处理',
+    category VARCHAR(50) DEFAULT NULL COMMENT '分类：sales=销售，purchase=采购，office=办公，etc=其他',
+    payment_method VARCHAR(50) DEFAULT NULL COMMENT '支付方式：cash=现金，bank=银行转账，alipay=支付宝，wechat=微信',
+    attachment VARCHAR(255) DEFAULT NULL COMMENT '附件 URL',
+    remark TEXT DEFAULT NULL COMMENT '备注',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    created_by INT DEFAULT NULL COMMENT '创建人',
+    updated_by INT DEFAULT NULL COMMENT '更新人',
+    approved_by INT DEFAULT NULL COMMENT '审批人',
+    approved_at TIMESTAMP NULL DEFAULT NULL COMMENT '审批时间',
+    INDEX idx_type (type),
+    INDEX idx_status (status),
+    INDEX idx_date (date),
+    INDEX idx_ref_no (ref_no),
+    INDEX idx_category (category),
+    INDEX idx_created_at (created_at),
+    INDEX idx_created_by (created_by)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='财务记录表';

@@ -1,0 +1,27 @@
+-- 销售人员管理表
+CREATE TABLE IF NOT EXISTS salesmen (
+    id INT AUTO_INCREMENT PRIMARY KEY COMMENT 'ID',
+    name VARCHAR(50) NOT NULL COMMENT '姓名',
+    avatar VARCHAR(255) DEFAULT '' COMMENT '头像 URL',
+    phone VARCHAR(20) NOT NULL COMMENT '手机号',
+    email VARCHAR(100) DEFAULT '' COMMENT '邮箱',
+    wechat VARCHAR(50) DEFAULT '' COMMENT '微信号',
+    level VARCHAR(20) DEFAULT '小白' COMMENT '等级：小白/初级/中级/高级/金牌/王牌',
+    store_id INT DEFAULT NULL COMMENT '所属门店 ID',
+    store_name VARCHAR(100) DEFAULT '' COMMENT '所属门店名称',
+    entry_date DATE DEFAULT NULL COMMENT '入职日期',
+    sales_amount DECIMAL(12,2) DEFAULT 0 COMMENT '销售额',
+    deal_count INT DEFAULT 0 COMMENT '成交量',
+    last_deal_date DATE DEFAULT NULL COMMENT '最后成交日期',
+    status VARCHAR(20) DEFAULT '在职' COMMENT '状态：在职/离职',
+    sort_order INT DEFAULT 0 COMMENT '排序',
+    remark TEXT DEFAULT NULL COMMENT '备注',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY uk_phone (phone),
+    KEY idx_level (level),
+    KEY idx_store (store_id),
+    KEY idx_status (status),
+    KEY idx_email (email),
+    KEY idx_entry_date (entry_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='销售人员管理表';
