@@ -202,20 +202,20 @@ class SimpleOSSClient {
             return rtrim($this->cdnDomain, '/') . '/' . ltrim($objectName, '/');
         }
         
-        $protocol = strpos($this->endpoint, 'https') === 0 ? 'https' : 'http';
+        // 始终使用 HTTPS
         $host = str_replace(['https://', 'http://'], '', $this->endpoint);
         
-        return $protocol . '://' . $this->bucket . '.' . $host . '/' . ltrim($objectName, '/');
+        return 'https://' . $this->bucket . '.' . $host . '/' . ltrim($objectName, '/');
     }
     
     /**
      * 构建对象 URL
      */
     private function buildObjectUrl($objectName) {
-        $protocol = strpos($this->endpoint, 'https') === 0 ? 'https' : 'http';
+        // 始终使用 HTTPS（OSS PUT 请求也支持 HTTPS）
         $host = str_replace(['https://', 'http://'], '', $this->endpoint);
         
-        return $protocol . '://' . $this->bucket . '.' . $host . '/' . $objectName;
+        return 'https://' . $this->bucket . '.' . $host . '/' . $objectName;
     }
     
     /**

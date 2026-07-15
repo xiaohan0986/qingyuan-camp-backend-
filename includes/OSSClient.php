@@ -113,11 +113,10 @@ class OSSClient {
             return rtrim($this->cdnDomain, '/') . '/' . ltrim($objectName, '/');
         }
         
-        // 否则使用 OSS 默认域名
-        $protocol = strpos($this->endpoint, 'https') === 0 ? 'https' : 'http';
+        // 否则使用 OSS 默认域名（始终使用 HTTPS）
         $host = str_replace(['https://', 'http://'], '', $this->endpoint);
         
-        return $protocol . '://' . $this->bucket . '.' . $host . '/' . ltrim($objectName, '/');
+        return 'https://' . $this->bucket . '.' . $host . '/' . ltrim($objectName, '/');
     }
     
     /**
