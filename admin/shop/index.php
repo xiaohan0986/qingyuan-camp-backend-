@@ -307,11 +307,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
 
             $tags = trim($_POST['tags'] ?? '');
+            $images = trim($_POST['images'] ?? '[]');
             $id = $db->insert('stores', [
                 'name' => $name,
                 'phone' => $phone,
                 'phone2' => $phone2,
                 'avatar' => $avatar,
+                'images' => $images,
                 'tags' => $tags,
                 'business_hours' => $businessHours,
                 'country' => $country,
@@ -401,6 +403,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 'suspended_until' => trim($_POST['suspended_until'] ?? '') ?: null,
                 'suspension_history' => trim($_POST['suspension_history'] ?? $row['suspension_history'] ?? ''),
                 'badge' => trim($_POST['badge'] ?? ''),
+                'images' => trim($_POST['images'] ?? '[]'),
                 'license_images' => trim($_POST['license_images'] ?? ''),
                 'updated_at' => date('Y-m-d H:i:s'),
             ], 'id = ?', [$id]);
@@ -1813,6 +1816,77 @@ $cities = $db->fetchAll("SELECT DISTINCT city FROM stores WHERE city IS NOT NULL
             transition: background 0.2s;
         }
         .search-result-item:hover { background: #f0f5ff; color: #1890ff; }
+        /* Z30075 门店照片组件样式 */
+        .piu-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: flex-start;
+            min-height: 80px;
+        }
+        .piu-item {
+            position: relative;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid #d9d9d9;
+            flex-shrink: 0;
+            background: #fff;
+        }
+        .piu-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        .piu-remove-btn {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            z-index: 3;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: rgba(0,0,0,0.55);
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+        .piu-remove-btn:hover {
+            background: rgba(255,77,79,0.9);
+        }
+        .piu-remove-btn::before {
+            content: '×';
+            font-size: 15px;
+        }
+        .piu-uploader {
+            width: 120px;
+            height: 120px;
+            flex-shrink: 0;
+            border: 2px dashed #d9d9d9;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            background: #fafafa;
+            transition: all 0.25s ease;
+            user-select: none;
+        }
+        .piu-uploader:hover {
+            border-color: #1890ff;
+            background: #f0f5ff;
+        }
+        .piu-uploader__icon { font-size: 32px; margin-bottom: 6px; line-height: 1; }
+        .piu-uploader__text { font-size: 12px; font-weight: 500; color: #262626; }
+        .piu-uploader__hint { font-size: 10px; color: #8c8c8c; margin-top: 3px; }
+        .piu-hidden-input { display: none; }
 
         .cell-name { font-weight: 600; color: var(--text-primary); }
         .cell-loc { color: var(--text-secondary); font-size: 12px; }
@@ -2212,7 +2286,7 @@ $cities = $db->fetchAll("SELECT DISTINCT city FROM stores WHERE city IS NOT NULL
                 </div>
 <!-- TAB3: 门店档案 -->
                 <div class="tab-section" data-tab="profile">
-                    <div class="form-group"><label>门店照片</label><div class="image-upload-area" onclick="alert('门店照片上传')">📷 点击上传门店照片（支持多张）</div></div>
+                    <div class="form-group"><label>门店照片</label><div id="storePhotoUploader" class="piu-wrapper"></div><input type="hidden" id="formStoreImages" value="[]"></div>
                     <div class="form-row-2">
                         <div class="form-group">
                             <label>门店标签（点击选择）</label>
@@ -3410,6 +3484,11 @@ $cities = $db->fetchAll("SELECT DISTINCT city FROM stores WHERE city IS NOT NULL
         licenseImages = [];
         pendingLicenseFiles = [];
         renderLicenseImages();
+        // 重置门店照片
+        storeImages = [];
+        pendingStoreImages = [];
+        initStorePhotoUploader();
+        document.getElementById('formStoreImages').value = '[]';
         // 重置头像预览
         document.getElementById('formAvatarPreview').innerHTML = '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">🏪</div>';
         document.getElementById('formAvatar').value = '';
@@ -3493,6 +3572,15 @@ $cities = $db->fetchAll("SELECT DISTINCT city FROM stores WHERE city IS NOT NULL
                     try { licenseImages = JSON.parse(r.license_images); } catch(e) { licenseImages = []; }
                 } else { licenseImages = []; }
                 renderLicenseImages();
+                // 加载门店照片
+                initStorePhotoUploader();
+                storeImages = [];
+                if (r.images) {
+                    try { storeImages = JSON.parse(r.images); } catch(e) { storeImages = []; }
+                }
+                if (!Array.isArray(storeImages)) storeImages = [];
+                document.getElementById('formStoreImages').value = JSON.stringify(storeImages);
+                renderStoreImages();
             } else {
                 showMessage('❌ ' + data.message, 'error');
             }
@@ -3719,6 +3807,122 @@ $cities = $db->fetchAll("SELECT DISTINCT city FROM stores WHERE city IS NOT NULL
         }
         pendingLicenseFiles = [];
         renderLicenseImages();
+        hideLoading();
+    }
+
+    // =============== 门店照片上传（Z30075 风格） ===============
+    var storeImages = [];
+    var pendingStoreImages = [];
+
+    function initStorePhotoUploader() {
+        var container = document.getElementById('storePhotoUploader');
+        if (!container) return;
+        container.innerHTML =
+            '<div class="piu-grid" id="storePhotoGrid">' +
+              '<div class="piu-uploader" id="storePhotoUploadBtn">' +
+                '<div class="piu-uploader__icon">📷</div>' +
+                '<div class="piu-uploader__text">点击上传</div>' +
+                '<div class="piu-uploader__hint">JPG/PNG 5MB</div>' +
+              '</div>' +
+            '</div>' +
+            '<input type="file" id="storePhotoInput" class="piu-hidden-input" multiple accept="image/*">' +
+            '<div style="font-size:12px;color:#8c8c8c;margin-top:8px;" id="storePhotoCount">已选择 0 张图片</div>';
+
+        document.getElementById('storePhotoUploadBtn').onclick = function() {
+            document.getElementById('storePhotoInput').click();
+        };
+        document.getElementById('storePhotoInput').onchange = function(e) {
+            handleStoreImageUpload(e);
+        };
+    }
+
+    function renderStoreImages() {
+        var grid = document.getElementById('storePhotoGrid');
+        if (!grid) return;
+        grid.querySelectorAll('.store-photo-item').forEach(function(el) { el.remove(); });
+        storeImages.forEach(function(url, idx) {
+            var src = (url.startsWith('http') || url.startsWith('/')) ? url : '/uploads/products/' + url.split('/').pop();
+            var html = '<div class="store-photo-item piu-item" style="width:120px;height:120px;">' +
+                '<img src="' + src.replace(/"/g, '&quot;') + '" style="width:100%;height:100%;object-fit:cover;">' +
+                '<button type="button" class="piu-remove-btn" onclick="removeStoreImage(' + idx + ')"></button></div>';
+            var uploader = grid.querySelector('.piu-uploader');
+            if (uploader) uploader.insertAdjacentHTML('beforebegin', html);
+        });
+        pendingStoreImages.forEach(function(item, idx) {
+            var html = '<div class="store-photo-item piu-item" style="width:120px;height:120px;position:relative;">' +
+                '<img src="' + item.blobUrl.replace(/"/g, '&quot;') + '" style="width:100%;height:100%;object-fit:cover;">' +
+                '<span style="position:absolute;top:4px;left:4px;background:#fa8c16;color:white;font-size:10px;padding:1px 5px;border-radius:3px;z-index:2;">待上传</span>' +
+                '<button type="button" class="piu-remove-btn" onclick="removePendingStoreImage(' + idx + ')"></button></div>';
+            var uploader = grid.querySelector('.piu-uploader');
+            if (uploader) uploader.insertAdjacentHTML('beforebegin', html);
+        });
+        updateStorePhotoCount();
+        updateStorePhotoUploaderVisibility();
+    }
+
+    function updateStorePhotoCount() {
+        var el = document.getElementById('storePhotoCount');
+        if (el) el.textContent = '已选择 ' + (storeImages.length + pendingStoreImages.length) + ' 张图片';
+    }
+
+    function updateStorePhotoUploaderVisibility() {
+        var total = storeImages.length + pendingStoreImages.length;
+        var uploader = document.getElementById('storePhotoUploadBtn');
+        if (uploader) uploader.style.display = (total >= 10) ? 'none' : 'flex';
+    }
+
+    function removeStoreImage(index) {
+        storeImages.splice(index, 1);
+        renderStoreImages();
+        document.getElementById('formStoreImages').value = JSON.stringify(storeImages);
+    }
+
+    function removePendingStoreImage(index) {
+        URL.revokeObjectURL(pendingStoreImages[index].blobUrl);
+        pendingStoreImages.splice(index, 1);
+        renderStoreImages();
+    }
+
+    function handleStoreImageUpload(event) {
+        var files = Array.from(event.target.files);
+        if (!files.length) return;
+        var total = storeImages.length + pendingStoreImages.length + files.length;
+        if (total > 10) {
+            showMessage('最多 10 张，已有 ' + (storeImages.length + pendingStoreImages.length) + ' 张', 'error');
+            event.target.value = ''; return;
+        }
+        files.forEach(function(file) {
+            if (!file.type.match(/image\//)) return;
+            if (file.size > 5 * 1024 * 1024) {
+                showMessage('图片 "' + file.name + '" 大小不能超过 5MB', 'error');
+                return;
+            }
+            var blobUrl = URL.createObjectURL(file);
+            pendingStoreImages.push({file: file, blobUrl: blobUrl, name: file.name});
+        });
+        renderStoreImages();
+        event.target.value = '';
+    }
+
+    async function uploadStoreImagesOnSave() {
+        if (!pendingStoreImages.length) return;
+        showLoading('上传门店照片...');
+        for (var i = 0; i < pendingStoreImages.length; i++) {
+            var item = pendingStoreImages[i];
+            var fd = new FormData();
+            fd.append('image', item.file);
+            try {
+                var res = await fetch('../product/product_upload.php', { method: 'POST', body: fd });
+                var result = await res.json();
+                if (result.success) {
+                    var url = result.preview_url || result.url || result.file_key;
+                    storeImages.push(url);
+                }
+            } catch(e) {}
+            URL.revokeObjectURL(item.blobUrl);
+        }
+        pendingStoreImages = [];
+        renderStoreImages();
         hideLoading();
     }
     /* ===== ====== ===== */
@@ -5398,10 +5602,11 @@ function renderSpecGroups() {
         btn.disabled = true;
         btn.textContent = '保存中…';
 
-        // 处理头像 + 经营牌照
+        // 处理头像 + 经营牌照 + 门店照片
         try {
             await handleAvatarOnSave();
             await handleLicenseOnSave();
+            await uploadStoreImagesOnSave();
         } catch(err) {
             showMessage('❌ 文件处理失败：' + (err.message || err), 'error');
             btn.disabled = false;
@@ -5430,6 +5635,7 @@ function renderSpecGroups() {
         params.append('suspended_until', document.getElementById('formSuspendUntilHidden').value);
         params.append('business_hours', document.getElementById('formOpenTime').value + '-' + document.getElementById('formCloseTime').value);
         params.append('badge', document.getElementById('formBadge').value);
+        params.append('images', JSON.stringify(storeImages));
         params.append('license_images', JSON.stringify(licenseImages));
 
         fetch('', {
