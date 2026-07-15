@@ -934,6 +934,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 'status' => intval($_POST['status'] ?? 1),
                 'sort' => intval($_POST['sort'] ?? 0),
                 'spec_type' => intval($_POST['spec_type'] ?? 1),
+                'spec_data' => trim($_POST['spec_data'] ?? '[]'),
                 'price' => floatval($_POST['price'] ?? 0),
                 'member_price' => floatval($_POST['member_price'] ?? 0),
                 'cost_price' => floatval($_POST['cost_price'] ?? 0),
@@ -991,6 +992,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 'status' => intval($_POST['status'] ?? 1),
                 'sort' => intval($_POST['sort'] ?? 0),
                 'spec_type' => intval($_POST['spec_type'] ?? 1),
+                'spec_data' => trim($_POST['spec_data'] ?? '[]'),
                 'price' => floatval($_POST['price'] ?? 0),
                 'member_price' => floatval($_POST['member_price'] ?? 0),
                 'cost_price' => floatval($_POST['cost_price'] ?? 0),
@@ -1072,10 +1074,285 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             exit;
         }
 
+        // 删除规格 OSS 图片
+        if ($_POST['action'] === 'product_delete_oss_images') {
+            $images = json_decode($_POST['images'] ?? '[]', true);
+            $deleted = 0;
+            if (!empty($images)) {
+                require_once __DIR__ . '/../../config/oss.php';
+                require_once __DIR__ . '/../../includes/OSSClient.php';
+                require_once __DIR__ . '/../../includes/SimpleOSSClient.php';
+                $ossClient = OSSClient::getInstance();
+                foreach ($images as $img) {
+                    if (strpos($img, 'http') !== 0) continue;
+                    $parsed = parse_url($img);
+                    $path = ltrim($parsed['path'] ?? '', '/');
+                    $uploadDir = defined('OSS_UPLOAD_DIR') ? OSS_UPLOAD_DIR : '';
+                    if ($uploadDir && strpos($path, $uploadDir . '/') === 0) {
+                        $path = substr($path, strlen($uploadDir) + 1);
+                    }
+                    try {
+                        $ossClient->deleteObject($path);
+                        $deleted++;
+                    } catch (Exception $e) {}
+                }
+            }
+            echo json_encode(['success' => true, 'message' => "已清理 {$deleted} 张规格图片"]);
+            exit;
+        }
+
         // 商品分类列表
         if ($_POST['action'] === 'product_categories') {
             $rows = $db->fetchAll("SELECT id, name FROM product_categories WHERE status = 1 ORDER BY sort DESC, id ASC");
             echo json_encode(['success' => true, 'data' => $rows]);
+            exit;
+        }
+
+        // ========== 活动管理 - 优惠券 CRUD ==========
+
+        // 优惠券列表
+        if ($_POST['action'] === 'coupon_list') {
+            $keyword = trim($_POST['keyword'] ?? '');
+            $page = max(1, intval($_POST['page'] ?? 1));
+            $pageSize = min(intval($_POST['pageSize'] ?? 20), 100);
+            $offset = ($page - 1) * $pageSize;
+
+            $where = ['1=1'];
+            $params = [];
+            if ($keyword !== '') {
+                $where[] = 'name LIKE ?';
+                $params[] = "%{$keyword}%";
+            }
+
+            $whereSql = implode(' AND ', $where);
+            $countRow = $db->fetchOne("SELECT COUNT(*) AS total FROM coupons WHERE {$whereSql}", $params);
+            $total = intval($countRow['total'] ?? 0);
+
+            $rows = [];
+            if ($total > 0) {
+                $rows = $db->fetchAll("SELECT * FROM coupons WHERE {$whereSql} ORDER BY sort DESC, id DESC LIMIT {$pageSize} OFFSET {$offset}", $params);
+            }
+
+            echo json_encode(['success' => true, 'data' => $rows, 'total' => $total, 'page' => $page, 'pageSize' => $pageSize]);
+            exit;
+        }
+
+        // 优惠券详情
+        if ($_POST['action'] === 'coupon_detail') {
+            $id = intval($_POST['id'] ?? 0);
+            $row = $db->fetchOne("SELECT * FROM coupons WHERE id = ?", [$id]);
+            echo json_encode(['success' => true, 'data' => $row ?: null]);
+            exit;
+        }
+
+        // 新增优惠券
+        if ($_POST['action'] === 'coupon_add') {
+            $name = trim($_POST['name'] ?? '');
+            if ($name === '') {
+                echo json_encode(['success' => false, 'message' => '优惠券名称不能为空']);
+                exit;
+            }
+
+            $data = [
+                'name' => $name,
+                'description' => trim($_POST['description'] ?? ''),
+                'type' => trim($_POST['type'] ?? 'discount'),
+                'value' => floatval($_POST['value'] ?? 0),
+                'min_amount' => floatval($_POST['min_amount'] ?? 0),
+                'max_amount' => !empty($_POST['max_amount']) ? floatval($_POST['max_amount']) : null,
+                'total' => intval($_POST['total'] ?? 0),
+                'per_limit' => intval($_POST['per_limit'] ?? 1),
+                'start_time' => trim($_POST['start_time'] ?? '') ?: null,
+                'end_time' => trim($_POST['end_time'] ?? '') ?: null,
+                'receive_start' => trim($_POST['receive_start'] ?? '') ?: null,
+                'receive_end' => trim($_POST['receive_end'] ?? '') ?: null,
+                'status' => intval($_POST['status'] ?? 1),
+                'sort' => intval($_POST['sort'] ?? 0),
+                'use_range' => trim($_POST['use_range'] ?? 'all'),
+                'instructions' => trim($_POST['instructions'] ?? ''),
+                'is_show' => intval($_POST['is_show'] ?? 1),
+                'created_at' => date('Y-m-d H:i:s'),
+                'updated_at' => date('Y-m-d H:i:s'),
+            ];
+
+            $id = $db->insert('coupons', $data);
+            echo json_encode(['success' => true, 'message' => '优惠券添加成功', 'id' => $id]);
+            exit;
+        }
+
+        // 编辑优惠券
+        if ($_POST['action'] === 'coupon_edit') {
+            $id = intval($_POST['id'] ?? 0);
+            $row = $db->fetchOne("SELECT id FROM coupons WHERE id = ?", [$id]);
+            if (!$row) {
+                echo json_encode(['success' => false, 'message' => '优惠券不存在']);
+                exit;
+            }
+
+            $name = trim($_POST['name'] ?? '');
+            if ($name === '') {
+                echo json_encode(['success' => false, 'message' => '优惠券名称不能为空']);
+                exit;
+            }
+
+            $db->update('coupons', [
+                'name' => $name,
+                'description' => trim($_POST['description'] ?? ''),
+                'type' => trim($_POST['type'] ?? 'discount'),
+                'value' => floatval($_POST['value'] ?? 0),
+                'min_amount' => floatval($_POST['min_amount'] ?? 0),
+                'max_amount' => !empty($_POST['max_amount']) ? floatval($_POST['max_amount']) : null,
+                'total' => intval($_POST['total'] ?? 0),
+                'per_limit' => intval($_POST['per_limit'] ?? 1),
+                'start_time' => trim($_POST['start_time'] ?? '') ?: null,
+                'end_time' => trim($_POST['end_time'] ?? '') ?: null,
+                'receive_start' => trim($_POST['receive_start'] ?? '') ?: null,
+                'receive_end' => trim($_POST['receive_end'] ?? '') ?: null,
+                'status' => intval($_POST['status'] ?? 1),
+                'sort' => intval($_POST['sort'] ?? 0),
+                'use_range' => trim($_POST['use_range'] ?? 'all'),
+                'instructions' => trim($_POST['instructions'] ?? ''),
+                'is_show' => intval($_POST['is_show'] ?? 1),
+                'updated_at' => date('Y-m-d H:i:s'),
+            ], 'id = ?', [$id]);
+
+            echo json_encode(['success' => true, 'message' => '优惠券更新成功']);
+            exit;
+        }
+
+        // 删除优惠券
+        if ($_POST['action'] === 'coupon_delete') {
+            $id = intval($_POST['id'] ?? 0);
+            $db->delete('coupons', 'id = ?', [$id]);
+            echo json_encode(['success' => true, 'message' => '优惠券已删除']);
+            exit;
+        }
+
+        // 切换优惠券状态
+        if ($_POST['action'] === 'coupon_toggle_status') {
+            $id = intval($_POST['id'] ?? 0);
+            $status = intval($_POST['status'] ?? 0);
+            $db->update('coupons', ['status' => $status, 'updated_at' => date('Y-m-d H:i:s')], 'id = ?', [$id]);
+            echo json_encode(['success' => true, 'message' => '状态已更新']);
+            exit;
+        }
+
+        // ========== 秒杀 CRUD ==========
+
+        // 秒杀列表
+        if ($_POST['action'] === 'seckill_list') {
+            $keyword = trim($_POST['keyword'] ?? '');
+            $page = max(1, intval($_POST['page'] ?? 1));
+            $pageSize = min(intval($_POST['pageSize'] ?? 20), 100);
+            $offset = ($page - 1) * $pageSize;
+
+            $where = ['1=1'];
+            $params = [];
+            if ($keyword !== '') {
+                $where[] = 'name LIKE ?';
+                $params[] = "%{$keyword}%";
+            }
+
+            $whereSql = implode(' AND ', $where);
+            $countRow = $db->fetchOne("SELECT COUNT(*) AS total FROM seckill_activities WHERE {$whereSql}", $params);
+            $total = intval($countRow['total'] ?? 0);
+
+            $rows = [];
+            if ($total > 0) {
+                $rows = $db->fetchAll("SELECT * FROM seckill_activities WHERE {$whereSql} ORDER BY sort DESC, id DESC LIMIT {$pageSize} OFFSET {$offset}", $params);
+            }
+
+            echo json_encode(['success' => true, 'data' => $rows, 'total' => $total, 'page' => $page, 'pageSize' => $pageSize]);
+            exit;
+        }
+
+        // 秒杀详情
+        if ($_POST['action'] === 'seckill_detail') {
+            $id = intval($_POST['id'] ?? 0);
+            $row = $db->fetchOne("SELECT * FROM seckill_activities WHERE id = ?", [$id]);
+            echo json_encode(['success' => true, 'data' => $row ?: null]);
+            exit;
+        }
+
+        // 新增秒杀
+        if ($_POST['action'] === 'seckill_add') {
+            $name = trim($_POST['name'] ?? '');
+            if ($name === '') {
+                echo json_encode(['success' => false, 'message' => '活动名称不能为空']);
+                exit;
+            }
+
+            $data = [
+                'name' => $name,
+                'product_id' => intval($_POST['product_id'] ?? 0),
+                'image' => trim($_POST['image'] ?? ''),
+                'seckill_price' => floatval($_POST['seckill_price'] ?? 0),
+                'original_price' => floatval($_POST['original_price'] ?? 0),
+                'stock' => intval($_POST['stock'] ?? 0),
+                'limit_buy' => intval($_POST['limit_buy'] ?? 1),
+                'start_time' => trim($_POST['start_time'] ?? '') ?: null,
+                'end_time' => trim($_POST['end_time'] ?? '') ?: null,
+                'status' => intval($_POST['status'] ?? 1),
+                'sort' => intval($_POST['sort'] ?? 0),
+                'description' => trim($_POST['description'] ?? ''),
+                'created_at' => date('Y-m-d H:i:s'),
+                'updated_at' => date('Y-m-d H:i:s'),
+            ];
+
+            $id = $db->insert('seckill_activities', $data);
+            echo json_encode(['success' => true, 'message' => '秒杀活动添加成功', 'id' => $id]);
+            exit;
+        }
+
+        // 编辑秒杀
+        if ($_POST['action'] === 'seckill_edit') {
+            $id = intval($_POST['id'] ?? 0);
+            $row = $db->fetchOne("SELECT id FROM seckill_activities WHERE id = ?", [$id]);
+            if (!$row) {
+                echo json_encode(['success' => false, 'message' => '秒杀活动不存在']);
+                exit;
+            }
+
+            $name = trim($_POST['name'] ?? '');
+            if ($name === '') {
+                echo json_encode(['success' => false, 'message' => '活动名称不能为空']);
+                exit;
+            }
+
+            $db->update('seckill_activities', [
+                'name' => $name,
+                'product_id' => intval($_POST['product_id'] ?? 0),
+                'image' => trim($_POST['image'] ?? ''),
+                'seckill_price' => floatval($_POST['seckill_price'] ?? 0),
+                'original_price' => floatval($_POST['original_price'] ?? 0),
+                'stock' => intval($_POST['stock'] ?? 0),
+                'limit_buy' => intval($_POST['limit_buy'] ?? 1),
+                'start_time' => trim($_POST['start_time'] ?? '') ?: null,
+                'end_time' => trim($_POST['end_time'] ?? '') ?: null,
+                'status' => intval($_POST['status'] ?? 1),
+                'sort' => intval($_POST['sort'] ?? 0),
+                'description' => trim($_POST['description'] ?? ''),
+                'updated_at' => date('Y-m-d H:i:s'),
+            ], 'id = ?', [$id]);
+
+            echo json_encode(['success' => true, 'message' => '秒杀活动更新成功']);
+            exit;
+        }
+
+        // 删除秒杀
+        if ($_POST['action'] === 'seckill_delete') {
+            $id = intval($_POST['id'] ?? 0);
+            $db->delete('seckill_activities', 'id = ?', [$id]);
+            echo json_encode(['success' => true, 'message' => '秒杀活动已删除']);
+            exit;
+        }
+
+        // 切换秒杀状态
+        if ($_POST['action'] === 'seckill_toggle_status') {
+            $id = intval($_POST['id'] ?? 0);
+            $status = intval($_POST['status'] ?? 0);
+            $db->update('seckill_activities', ['status' => $status, 'updated_at' => date('Y-m-d H:i:s')], 'id = ?', [$id]);
+            echo json_encode(['success' => true, 'message' => '状态已更新']);
             exit;
         }
 
@@ -1101,6 +1378,16 @@ $cities = $db->fetchAll("SELECT DISTINCT city FROM stores WHERE city IS NOT NULL
     <link rel="stylesheet" href="../assets/css/layout.min.css?v=<?= time() ?>">
     <!-- 高德地图 JSAPI v2.0：Key 请在 https://console.amap.com/dev/key/app 申请 -->
     <style>
+        .spec-group{border:1px solid #eee;border-radius:8px;margin-bottom:12px;overflow:hidden;}
+        .spec-group-head{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#f8f9fa;font-weight:600;}
+        .spec-group-body{padding:8px 12px;}
+        .spec-item{display:flex;align-items:center;gap:6px;padding:8px 0;border-bottom:1px dashed #f0f0f0;}
+        .spec-item:last-child{border-bottom:none;}
+        .spec-item input{padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px;outline:none;width:95px;}
+        .spec-item input.img{width:140px;}
+        .spec-item input.name{width:110px;}
+        .spec-item input:focus{border-color:#409eff;}
+        .spec-margin{width:70px;text-align:center;font-size:13px;font-weight:600;}
         .toolbar {
             display: flex;
             justify-content: space-between;
@@ -1466,6 +1753,7 @@ $cities = $db->fetchAll("SELECT DISTINCT city FROM stores WHERE city IS NOT NULL
             overflow: hidden;
             border: 2px solid #f0f0f0;
             transition: all 0.3s;
+            cursor: grab;
         }
         .image-item:hover {
             border-color: #1890ff;
@@ -1497,6 +1785,25 @@ $cities = $db->fetchAll("SELECT DISTINCT city FROM stores WHERE city IS NOT NULL
         .image-item .remove:hover {
             background: #ff4d4f;
             transform: scale(1.1);
+        }
+        .image-item.dragging {
+            opacity: 0.4;
+            border: 2px dashed #1890ff;
+            cursor: grabbing;
+        }
+        .image-item:first-child::after {
+            content: "首页展示图";
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(24, 144, 255, 0.85);
+            color: #fff;
+            font-size: 12px;
+            text-align: center;
+            padding: 3px 0;
+            z-index: 1;
+            pointer-events: none;
         }
         .search-result-item {
             padding: 8px 12px;
@@ -1697,6 +2004,7 @@ $cities = $db->fetchAll("SELECT DISTINCT city FROM stores WHERE city IS NOT NULL
                 <span class="drawer-tab" data-tab="orders">门店订单</span>
                 <span class="drawer-tab" data-tab="after">门店售后</span>
                 <span class="drawer-tab" data-tab="reviews">门店评价</span>
+                <span class="drawer-tab" data-tab="benefits">活动管理</span>
             </div>
             <div class="drawer-body">
                 <!-- TAB1: 门店信息 -->
@@ -1757,6 +2065,12 @@ $cities = $db->fetchAll("SELECT DISTINCT city FROM stores WHERE city IS NOT NULL
                                         <span style="font-size:18px;">🏆</span>
                                         <span style="font-size:13px;color:#8c8c8c;">徽章</span>
                                         <strong id="infoBadge" style="font-size:14px;color:#262626;">-</strong>
+                                    </div>
+                                    <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fafafa;border-radius:8px;">
+                                        <span style="font-size:18px;">🚚</span>
+                                        <span style="font-size:13px;color:#8c8c8c;">配送</span>
+                                        <strong id="infoDeliveryTime" style="font-size:14px;color:#262626;">--</strong>
+                                        <span style="font-size:12px;color:#8c8c8c;">分钟</span>
                                     </div>
                                     <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fafafa;border-radius:8px;">
                                         <span style="font-size:18px;">🎫</span>
@@ -2019,6 +2333,92 @@ $cities = $db->fetchAll("SELECT DISTINCT city FROM stores WHERE city IS NOT NULL
                         <div class="empty-state"><div class="icon">⭐</div><div class="text">暂无评价数据</div></div>
                     </div>
                 </div>
+                <!-- TAB7: 活动管理 -->
+                <div class="tab-section" data-tab="benefits">
+                    <!-- 子 Tab 切换 -->
+                    <div style="display:flex;gap:6px;border-bottom:1px solid #f0f0f0;padding-bottom:10px;margin-bottom:16px;">
+                        <span class="benefit-sub-tab active" data-subtab="coupon" onclick="switchBenefitTab('coupon')" style="padding:6px 16px;border-radius:20px;font-size:13px;cursor:pointer;background:#1890ff;color:#fff;transition:all 0.2s;">🎫 优惠券</span>
+                        <span class="benefit-sub-tab" data-subtab="seckill" onclick="switchBenefitTab('seckill')" style="padding:6px 16px;border-radius:20px;font-size:13px;cursor:pointer;background:#f5f5f5;color:#595959;transition:all 0.2s;">⚡ 秒杀</span>
+                        <span class="benefit-sub-tab" data-subtab="presale" onclick="switchBenefitTab('presale')" style="padding:6px 16px;border-radius:20px;font-size:13px;cursor:pointer;background:#f5f5f5;color:#595959;transition:all 0.2s;">📅 预售</span>
+                        <span class="benefit-sub-tab" data-subtab="help" onclick="switchBenefitTab('help')" style="padding:6px 16px;border-radius:20px;font-size:13px;cursor:pointer;background:#f5f5f5;color:#595959;transition:all 0.2s;">🤝 助力</span>
+                        <span class="benefit-sub-tab" data-subtab="group" onclick="switchBenefitTab('group')" style="padding:6px 16px;border-radius:20px;font-size:13px;cursor:pointer;background:#f5f5f5;color:#595959;transition:all 0.2s;">👥 拼团</span>
+                    </div>
+
+                    <!-- 子1: 优惠券 -->
+                    <div class="benefit-section" data-subtab="coupon">
+                        <div style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">
+                            <div style="font-size:15px;font-weight:600;color:#262626;">🎫 优惠券管理</div>
+                            <button class="btn btn-primary" onclick="openCouponEditor()">+ 新增优惠券</button>
+                        </div>
+                        <div class="data-table" id="couponTable">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>名称</th>
+                                        <th>类型</th>
+                                        <th>价值</th>
+                                        <th>最低消费</th>
+                                        <th>库存</th>
+                                        <th>已领/已用</th>
+                                        <th>有效期</th>
+                                        <th>状态</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="couponList">
+                                    <tr><td colspan="10" style="text-align:center;color:#8c8c8c;padding:40px;">加载中...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="pagination" id="couponPagination" style="display:none;"></div>
+                    </div>
+
+                    <!-- 子2: 秒杀 -->
+                    <div class="benefit-section" data-subtab="seckill" style="display:none;">
+                        <div style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">
+                            <div style="font-size:15px;font-weight:600;color:#262626;">⚡ 秒杀活动</div>
+                            <button class="btn btn-primary" onclick="openSeckillEditor()">+ 新增秒杀</button>
+                        </div>
+                        <div class="data-table">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>活动名称</th>
+                                        <th>秒杀价</th>
+                                        <th>原价</th>
+                                        <th>库存/已售</th>
+                                        <th>限购</th>
+                                        <th>开始时间</th>
+                                        <th>结束时间</th>
+                                        <th>状态</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="seckillList">
+                                    <tr><td colspan="10" style="text-align:center;color:#8c8c8c;padding:40px;">加载中...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="pagination" id="seckillPagination" style="display:none;"></div>
+                    </div>
+
+                    <!-- 子3: 预售 -->
+                    <div class="benefit-section" data-subtab="presale" style="display:none;">
+                        <div class="empty-state"><div class="icon">📅</div><div class="text">预售功能开发中...</div></div>
+                    </div>
+
+                    <!-- 子4: 助力 -->
+                    <div class="benefit-section" data-subtab="help" style="display:none;">
+                        <div class="empty-state"><div class="icon">🤝</div><div class="text">助力功能开发中...</div></div>
+                    </div>
+
+                    <!-- 子5: 拼团 -->
+                    <div class="benefit-section" data-subtab="group" style="display:none;">
+                        <div class="empty-state"><div class="icon">👥</div><div class="text">拼团功能开发中...</div></div>
+                    </div>
+                </div>
             </div>
             <div class="drawer-footer">
                 <button class="btn btn-default" onclick="closeFormDrawer()">取消</button>
@@ -2154,9 +2554,10 @@ $cities = $db->fetchAll("SELECT DISTINCT city FROM stores WHERE city IS NOT NULL
                             </div>
                         </div>
                         <div id="multiSpecBlock" style="display:none;">
-                            <div style="padding:20px;text-align:center;color:#8c8c8c;background:#fafafa;border-radius:8px;border:1px dashed #d9d9d9;">
-                                ⚙️ 多规格编辑（规格项 + SKU 表格）已预留，待后续扩展
-                            </div>
+                            <!-- 多规格列表 -->
+                            <div class="btn btn-primary" onclick="addSpecGroup()" style="margin-bottom:16px;display:inline-block;cursor:pointer;">+ 新增规格分类</div>
+                            <div id="specGroupContainer"></div>
+                            <input type="hidden" name="spec_data" id="specDataInput" value='[]'>
                         </div>
                         <div style="border-top:1px solid #f0f0f0;margin-top:16px;padding-top:16px;">
                             <div class="form-row-2">
@@ -2643,6 +3044,8 @@ $cities = $db->fetchAll("SELECT DISTINCT city FROM stores WHERE city IS NOT NULL
         }
         // 月售
         document.getElementById('infoMonthlySales').textContent = r.monthly_sales || '0';
+        // 配送时间
+        document.getElementById('infoDeliveryTime').textContent = r.delivery_time ? r.delivery_time + ' 分钟' : '--';
         // 等级（可点击查看细则）
         const levelEl = document.getElementById('infoLevel');
         if (r.level && r.level_score) {
@@ -4231,6 +4634,14 @@ $cities = $db->fetchAll("SELECT DISTINCT city FROM stores WHERE city IS NOT NULL
                     document.getElementById('pStock').value = p.stock || 0;
                     document.getElementById('pWeight').value = p.weight || 0;
                     document.getElementById('pStockMethod').value = p.stock_method || 1;
+                    if (p.spec_data) {
+                        document.getElementById('specDataInput').value = typeof p.spec_data === 'string' ? p.spec_data : JSON.stringify(p.spec_data);
+                        // 保存原始 spec_data 用于对比删除
+                        window._oldSpecData = document.getElementById('specDataInput').value;
+                    } else {
+                        document.getElementById('specDataInput').value = '[]';
+                        window._oldSpecData = '[]';
+                    }
                     document.getElementById('pLimitNum').value = p.limit_buy_num || 0;
                     document.getElementById('pContent').value = p.content || '';
                     document.getElementById('pVideoUrl').value = p.video_url || '';
@@ -4287,8 +4698,191 @@ $cities = $db->fetchAll("SELECT DISTINCT city FROM stores WHERE city IS NOT NULL
         } else {
             single.style.display = 'none';
             multi.style.display = 'block';
+            renderSpecGroups();
         }
     }
+
+    /* ===== 多规格构建器 ===== */
+    var specData = [];
+
+    function getSpecData() {
+        try { return JSON.parse(document.getElementById('specDataInput').value || '[]'); }
+        catch(e) { return []; }
+    }
+    function setSpecData(data) {
+        document.getElementById('specDataInput').value = JSON.stringify(data);
+    }
+
+    
+    async function previewSpecImg(input) {
+        if (!input.files || !input.files[0]) return;
+        var file = input.files[0];
+        var item = input.closest('.spec-item');
+        if (!item) return;
+        // 先显示本地预览
+        var imgContainer = item.querySelector('div[onclick*="click()"]');
+        if (imgContainer) imgContainer.innerHTML = '<img src="' + URL.createObjectURL(file) + '" style="width:100%;height:100%;object-fit:cover;">';
+        // 上传到 OSS
+        var formData = new FormData();
+        formData.append('image', file);
+        try {
+            var response = await fetch('../product/product_upload.php', { method: 'POST', body: formData });
+            var result = await response.json();
+            if (result.success) {
+                var imageUrl = result.preview_url || result.url || result.file_key || '';
+                var hidden = item.querySelector('.spec-img-val');
+                if (hidden) { hidden.value = imageUrl; }
+                syncSpecData();
+            } else {
+                showMessage('规格图片上传失败: ' + (result.message || '未知错误'), 'error');
+                // 恢复为 '+' 占位
+                if (imgContainer) imgContainer.innerHTML = '<span style="font-size:22px;color:#d9d9d9;">+</span>';
+            }
+        } catch (error) {
+            showMessage('规格图片上传失败: ' + (error.message || error), 'error');
+            if (imgContainer) imgContainer.innerHTML = '<span style="font-size:22px;color:#d9d9d9;">+</span>';
+        }
+    }
+function renderSpecGroups() {
+        var data = getSpecData();
+        var container = document.getElementById('specGroupContainer');
+        if (!container) return;
+        if (data.length === 0) {
+            container.innerHTML = '<div style="padding:20px;text-align:center;color:#8c8c8c;background:#fafafa;border-radius:8px;border:1px dashed #d9d9d9;">暂无规格分类，点击上方「新增规格分类」添加</div>';
+            return;
+        }
+        var html = '';
+        for (var g = 0; g < data.length; g++) {
+            var group = data[g];
+            html += '<div class="spec-group">';
+            html += '<div class="spec-group-head"><span>规格：' + escapeHtml(group.name) + '</span><div style="display:flex;gap:6px;"><button class="btn btn-sm btn-success" onclick="addSpecItem(this)" style="padding:4px 10px;font-size:12px;border:none;border-radius:4px;color:#fff;background:#67c23a;cursor:pointer;">新增规格</button><button class="btn btn-sm btn-danger" onclick="delSpecGroup(this)" style="padding:4px 10px;font-size:12px;border:none;border-radius:4px;color:#fff;background:#f56c6c;cursor:pointer;">删除</button></div></div>';
+            html += '<div class="spec-group-body">';
+            var items = group.items || [];
+            if (items.length === 0) {
+                html += '<div style="padding:12px;text-align:center;color:#bfbfbf;font-size:13px;">暂无规格项，点击「新增规格」添加</div>';
+            } else {
+                for (var i = 0; i < items.length; i++) {
+                    var item = items[i];
+                    var margin = (item.price && item.cost_price) ? ((parseFloat(item.price) - parseFloat(item.cost_price)) / parseFloat(item.price) * 100).toFixed(1) : '';
+                                        html += '<div class="spec-item" style="display:flex;gap:6px;align-items:center;padding:10px 0;border-bottom:1px dashed #f0f0f0;">';
+                    html += '<div style="display:flex;flex-direction:column;align-items:center;gap:3px;width:70px;flex-shrink:0;">';
+                    html += '<span style="font-size:10px;color:#999;">图片</span>';
+                    html += '<div style="width:60px;height:60px;border:1px dashed #d9d9d9;border-radius:6px;overflow:hidden;cursor:pointer;display:flex;align-items:center;justify-content:center;background:#fafafa;" onclick="this.parentNode.querySelector(\'input[type=file]\').click()">';
+                    html += (item.image ? '<img src="' + escapeHtml(item.image) + '" style="width:100%;height:100%;object-fit:cover;">' : '<span style="font-size:22px;color:#d9d9d9;">+</span>');
+                    html += '</div>';
+                    html += '<input type="file" style="display:none" accept="image/*" onchange="previewSpecImg(this)">';
+                    html += '<input type="hidden" class="spec-img-val" value="' + escapeHtml(item.image || '') + '">';
+                    html += '</div>';
+                    html += '<div><span style="font-size:10px;color:#999;display:block;margin-bottom:2px;">规格名称</span><input type="text" class="name" value="' + escapeHtml(item.name || '') + '" placeholder="红色" onchange="syncSpecData()" style="width:90px;"></div>';
+                    html += '<div><span style="font-size:10px;color:#999;display:block;margin-bottom:2px;">价格</span><input type="number" value="' + (item.price ?? '') + '" step="0.01" placeholder="" onchange="syncSpecData()" style="width:80px;"></div>';
+                    html += '<div><span style="font-size:10px;color:#999;display:block;margin-bottom:2px;">会员价</span><input type="number" value="' + (item.member_price ?? '') + '" step="0.01" placeholder="" onchange="syncSpecData()" style="width:80px;"></div>';
+                    html += '<div><span style="font-size:10px;color:#999;display:block;margin-bottom:2px;">成本价</span><input type="number" value="' + (item.cost_price ?? '') + '" step="0.01" placeholder="" onchange="syncSpecData()" style="width:80px;"></div>';
+                    html += '<div style="text-align:center"><span style="font-size:10px;color:#999;display:block;margin-bottom:2px;">毛利率</span><div class="spec-margin" style="padding:6px 0;font-size:13px;font-weight:600;' + (margin ? 'color:' + (parseFloat(margin) < 0 ? '#f56c6c' : '#67c23a') : '') + '">' + (margin ? margin + '%' : '-') + '</div></div>';
+                    html += '<div><span style="font-size:10px;color:#999;display:block;margin-bottom:2px;">库存（-1无限）</span><input type="number" value="' + (item.stock ?? '-1') + '" min="-1" placeholder="-1" onchange="syncSpecData()" style="width:70px;"></div>';
+                    html += '<div><span style="font-size:10px;color:#999;display:block;margin-bottom:2px;">重量/kg</span><input type="number" value="' + (item.weight ?? '0.5') + '" step="0.001" placeholder="0.5" onchange="syncSpecData()" style="width:70px;"></div>';
+                    html += '<button class="btn btn-sm btn-danger" onclick="delSpecItem(this)" style="padding:4px 8px;font-size:12px;border:none;border-radius:4px;color:#fff;background:#f56c6c;cursor:pointer;margin-top:18px;">删除</button>';
+                    html += '</div>';
+                }
+            }
+            html += '</div></div>';
+        }
+        container.innerHTML = html;
+    }
+
+    function syncSpecData() {
+        var container = document.getElementById('specGroupContainer');
+        if (!container) return;
+        var groups = container.querySelectorAll('.spec-group');
+        var data = [];
+        for (var g = 0; g < groups.length; g++) {
+            var head = groups[g].querySelector('.spec-group-head span');
+            if (!head) continue;
+            var name = head.textContent.replace('规格：', '');
+            var items = [];
+            var itemEls = groups[g].querySelectorAll('.spec-item');
+            for (var i = 0; i < itemEls.length; i++) {
+                var inputs = itemEls[i].querySelectorAll('input');
+                // DOM input order per .spec-item:
+                //   [0] file upload, [1] hidden spec-img-val, [2] text name,
+                //   [3] price, [4] member_price, [5] cost_price, [6] stock, [7] weight
+                if (inputs.length < 8) continue;
+                items.push({
+                    image: itemEls[i].querySelector('.spec-img-val') ? itemEls[i].querySelector('.spec-img-val').value : (itemEls[i].querySelector('input[type=hidden]') ? itemEls[i].querySelector('input[type=hidden]').value : ''),
+
+                    name: inputs[2].value,
+                    price: parseFloat(inputs[3].value) || 0,
+                    member_price: parseFloat(inputs[4].value) || 0,
+                    cost_price: parseFloat(inputs[5].value) || 0,
+                    stock: parseInt(inputs[6].value) || 0,
+                    weight: parseFloat(inputs[7].value) || 0
+                });
+            }
+            data.push({ name: name, items: items });
+        }
+        setSpecData(data);
+        // 刷新毛利率显示
+        renderSpecGroups();
+    }
+
+    function addSpecGroup() {
+        var name = prompt('请输入规格分类名称（如：颜色、尺寸、版本）：');
+        if (!name || name.trim() === '') return;
+        var data = getSpecData();
+        data.push({ name: name.trim(), items: [] });
+        setSpecData(data);
+        renderSpecGroups();
+    }
+
+    function delSpecGroup(el) {
+        if (!confirm('确定删除此规格分类？')) return;
+        var groupEl = el.closest('.spec-group');
+        if (groupEl) groupEl.remove();
+        syncSpecData();
+    }
+
+    function addSpecItem(el) {
+        var group = el.closest('.spec-group');
+        if (!group) return;
+        var body = group.querySelector('.spec-group-body');
+        if (!body) return;
+        // 移除'暂无规格项'占位文本
+        var emptyMsg = body.querySelector('div[style*="text-align:center"]');
+        if (emptyMsg) emptyMsg.remove();
+        var item = document.createElement('div');
+        item.className = 'spec-item';
+        item.innerHTML = '<div style="display:flex;align-items:center;gap:6px;padding:10px 0;border-bottom:1px dashed #f0f0f0;">' +
+            '<div style="display:flex;flex-direction:column;align-items:center;gap:3px;width:70px;flex-shrink:0;">' +
+            '<span style="font-size:10px;color:#999;">图片</span>' +
+            '<div style="width:60px;height:60px;border:1px dashed #d9d9d9;border-radius:6px;overflow:hidden;cursor:pointer;display:flex;align-items:center;justify-content:center;background:#fafafa;" onclick="this.parentNode.querySelector(\'input[type=file]\').click()">' +
+            '<span style="font-size:22px;color:#d9d9d9;">+</span></div>' +
+            '<input type="file" style="display:none" accept="image/*" onchange="previewSpecImg(this)">' +
+            '<input type="hidden" class="spec-img-val" value="">' +
+            '</div>' +
+            '<div><span style="font-size:10px;color:#999;display:block;margin-bottom:2px;">规格名称</span><input type="text" class="name" placeholder="红色" onchange="syncSpecData()" style="width:90px;"></div>' +
+            '<div><span style="font-size:10px;color:#999;display:block;margin-bottom:2px;">价格</span><input type="number" step="0.01" placeholder="" onchange="syncSpecData()" style="width:80px;"></div>' +
+            '<div><span style="font-size:10px;color:#999;display:block;margin-bottom:2px;">会员价</span><input type="number" step="0.01" placeholder="" onchange="syncSpecData()" style="width:80px;"></div>' +
+            '<div><span style="font-size:10px;color:#999;display:block;margin-bottom:2px;">成本价</span><input type="number" step="0.01" placeholder="" onchange="syncSpecData()" style="width:80px;"></div>' +
+            '<div style="text-align:center"><span style="font-size:10px;color:#999;display:block;margin-bottom:2px;">毛利率</span><div class="spec-margin" style="padding:6px 0;font-size:13px;font-weight:600;">-</div></div>' +
+            '<div><span style="font-size:10px;color:#999;display:block;margin-bottom:2px;">库存（-1无限）</span><input type="number" min="-1" placeholder="-1" value="-1" onchange="syncSpecData()" style="width:70px;"></div>' +
+            '<div><span style="font-size:10px;color:#999;display:block;margin-bottom:2px;">重量/kg</span><input type="number" step="0.001" placeholder="0.5" value="0.5" onchange="syncSpecData()" style="width:70px;"></div>' +
+            '<button class="btn btn-sm btn-danger" onclick="delSpecItem(this)" style="padding:4px 8px;font-size:12px;border:none;border-radius:4px;color:#fff;background:#f56c6c;cursor:pointer;margin-top:18px;">删除</button>' +
+            '</div>'
+        body.appendChild(item);
+        syncSpecData();
+    }
+
+    function delSpecItem(el) {
+        el.closest('.spec-item').remove();
+        syncSpecData();
+    }
+
+    /* 提交时收集规格数据 */
+    window.collectSpecData = function() {
+        var specType = document.querySelector('input[name="spec_type"]:checked');
+        if (specType && specType.value === '2') {
+            // 多规格，已通过 hidden input 保存
+        }
+    };
 
     function toggleLimitBuy(open) {
         document.getElementById('pLimitNum').disabled = !open;
@@ -4329,15 +4923,46 @@ $cities = $db->fetchAll("SELECT DISTINCT city FROM stores WHERE city IS NOT NULL
     function renderImages() {
         var container = document.getElementById('imageList');
         if (!container) return;
-        var storedHtml = pImages.map(function(img, index) {
-            var imgSrc = (img.startsWith('http') || img.startsWith('/')) ? img : '/uploads/products/' + img.split('/').pop();
-            return '<div class="image-item"><img src="' + imgSrc + '" style="width:100%;height:100%;object-fit:cover;"><button type="button" class="remove" onclick="removeImage(' + index + ')">×</button></div>';
-        }).join('');
-        var pendingHtml = pPendingImages.map(function(item, idx) {
-            var globalIdx = pImages.length + idx;
-            return '<div class="image-item" style="position:relative;"><img src="' + item.blobUrl + '" style="width:100%;height:100%;object-fit:cover;"><span style="position:absolute;top:4px;left:4px;background:#fa8c16;color:white;font-size:10px;padding:1px 5px;border-radius:3px;">待上传</span><button type="button" class="remove" onclick="removePendingImage(' + idx + ')">×</button></div>';
-        }).join('');
-        container.innerHTML = storedHtml + pendingHtml;
+        container.innerHTML = '';
+        pImages.forEach(function(img) {
+            var div = document.createElement('div');
+            div.className = 'image-item';
+            div.draggable = true;
+            div.dataset.type = 'stored';
+            div.dataset.url = img;
+            var imgEl = document.createElement('img');
+            imgEl.src = (img.startsWith('http') || img.startsWith('/')) ? img : '/uploads/products/' + img.split('/').pop();
+            imgEl.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+            div.appendChild(imgEl);
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'remove';
+            btn.textContent = '×';
+            div.appendChild(btn);
+            container.appendChild(div);
+        });
+        pPendingImages.forEach(function(item) {
+            var div = document.createElement('div');
+            div.className = 'image-item';
+            div.draggable = true;
+            div.dataset.type = 'pending';
+            div.dataset.blob = item.blobUrl;
+            div.style.position = 'relative';
+            var imgEl = document.createElement('img');
+            imgEl.src = item.blobUrl;
+            imgEl.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+            div.appendChild(imgEl);
+            var badge = document.createElement('span');
+            badge.style.cssText = 'position:absolute;top:4px;left:4px;background:#fa8c16;color:white;font-size:10px;padding:1px 5px;border-radius:3px;';
+            badge.textContent = '待上传';
+            div.appendChild(badge);
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'remove';
+            btn.textContent = '×';
+            div.appendChild(btn);
+            container.appendChild(div);
+        });
         document.getElementById('imagesInput').value = JSON.stringify(pImages);
     }
 
@@ -4382,18 +5007,85 @@ $cities = $db->fetchAll("SELECT DISTINCT city FROM stores WHERE city IS NOT NULL
         return urls;
     }
 
-    function removeImage(index) {
-        pImages.splice(index, 1);
-        updateImageCount();
-        renderImages();
+    // =============== 拖拽排序 ===============
+    var _dragItem = null;
+
+    function syncArrayFromDom() {
+        var container = document.getElementById('imageList');
+        if (!container) return;
+        var items = Array.from(container.children);
+        var newStored = [];
+        var newPending = [];
+        items.forEach(function(item) {
+            if (item.dataset.type === 'stored') {
+                newStored.push(item.dataset.url);
+            } else if (item.dataset.type === 'pending') {
+                var blob = item.dataset.blob;
+                var found = pPendingImages.find(function(p) { return p.blobUrl === blob; });
+                if (found) newPending.push(found);
+            }
+        });
+        pImages = newStored;
+        pPendingImages = newPending;
+        document.getElementById('imagesInput').value = JSON.stringify(pImages);
     }
 
-    function removePendingImage(index) {
-        URL.revokeObjectURL(pPendingImages[index].blobUrl);
-        pPendingImages.splice(index, 1);
+    // 使用事件委托处理图片删除，兼容拖拽后索引变化
+    document.addEventListener('click', function _imageRemoveHandler(e) {
+        var btn = e.target.closest('#imageList .remove');
+        if (!btn) return;
+        var item = btn.closest('.image-item');
+        if (!item) return;
+        e.preventDefault();
+        var container = document.getElementById('imageList');
+        if (!container) return;
+        var allStored = container.querySelectorAll('.image-item[data-type="stored"]');
+        var allPending = container.querySelectorAll('.image-item[data-type="pending"]');
+        if (item.dataset.type === 'stored') {
+            var idx = Array.from(allStored).indexOf(item);
+            if (idx !== -1) {
+                pImages.splice(idx, 1);
+            }
+        } else if (item.dataset.type === 'pending') {
+            var idx = Array.from(allPending).indexOf(item);
+            if (idx !== -1) {
+                URL.revokeObjectURL(pPendingImages[idx].blobUrl);
+                pPendingImages.splice(idx, 1);
+            }
+        }
         updateImageCount();
         renderImages();
-    }
+    });
+
+    // 拖拽事件：初始化
+    document.getElementById('imageList').addEventListener('dragstart', function(e) {
+        var item = e.target.closest('.image-item');
+        if (!item) return;
+        _dragItem = item;
+        item.classList.add('dragging');
+    });
+
+    document.getElementById('imageList').addEventListener('dragend', function() {
+        if (_dragItem) {
+            _dragItem.classList.remove('dragging');
+            _dragItem = null;
+        }
+    });
+
+    document.getElementById('imageList').addEventListener('dragover', function(e) {
+        e.preventDefault();
+        var targetItem = e.target.closest('.image-item:not(.dragging)');
+        if (!targetItem || targetItem === _dragItem) return;
+        var rect = targetItem.getBoundingClientRect();
+        var isLeftHalf = e.clientX < rect.left + rect.width / 2;
+        if (isLeftHalf) {
+            this.insertBefore(_dragItem, targetItem);
+        } else {
+            this.insertBefore(_dragItem, targetItem.nextSibling);
+        }
+        // 拖动中实时同步数据
+        syncArrayFromDom();
+    });
 
     // =============== 视频/封面上传 ===============
     function handlePVideoUpload(event) {
@@ -4546,6 +5238,7 @@ $cities = $db->fetchAll("SELECT DISTINCT city FROM stores WHERE city IS NOT NULL
             params.append('status', document.getElementById('pStatus').value);
             params.append('sort', document.getElementById('pSort').value);
             params.append('spec_type', document.querySelector('input[name="spec_type"]:checked').value);
+            params.append('spec_data', document.getElementById('specDataInput').value);
             params.append('price', document.getElementById('pPrice').value);
             params.append('member_price', document.getElementById('pMemberPrice').value);
             params.append('cost_price', document.getElementById('pCostPrice').value);
@@ -4566,9 +5259,30 @@ $cities = $db->fetchAll("SELECT DISTINCT city FROM stores WHERE city IS NOT NULL
             params.append('points_deduct_type', document.getElementById('pPointsDeductType').value);
             params.append('commission_type', document.getElementById('pCommission').value.trim());
 
+            // 删除已移除的规格图片
+            (function() {
+                var oldSpec = [];
+                try { oldSpec = JSON.parse(window._oldSpecData || '[]'); } catch(e) {}
+                var newSpec = [];
+                try { newSpec = JSON.parse(document.getElementById('specDataInput').value || '[]'); } catch(e) {}
+                var oldImgs = [];
+                oldSpec.forEach(function(g) { (g.items || []).forEach(function(it) { if (it.image && it.image.indexOf('http') === 0) oldImgs.push(it.image); }); });
+                var newImgs = [];
+                newSpec.forEach(function(g) { (g.items || []).forEach(function(it) { if (it.image && it.image.indexOf('http') === 0) newImgs.push(it.image); }); });
+                var deleted = oldImgs.filter(function(img) { return newImgs.indexOf(img) === -1; });
+                if (deleted.length > 0) {
+                    var dp = new URLSearchParams();
+                    dp.append('action', 'product_delete_oss_images');
+                    dp.append('images', JSON.stringify(deleted));
+                    fetch('', { method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: dp.toString() }).catch(function(){});
+                }
+            })();
+
             var response = await fetch('', { method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: params.toString() });
             var result = await response.json();
             if (result.success) {
+                // 保存成功后更新旧数据引用
+                window._oldSpecData = document.getElementById('specDataInput').value;
                 showMessage('✅ ' + result.message, 'success');
                 closeProductEditor();
                 loadStoreProducts(productEditorStoreId);
@@ -5327,6 +6041,449 @@ $cities = $db->fetchAll("SELECT DISTINCT city FROM stores WHERE city IS NOT NULL
                 }
             })
             .catch(function(err) { hideLoading(); showMessage('❌ 请求失败：' + err.message, 'error'); });
+    }
+    /* ===== ====== ===== */
+    /* ===== 活动管理 - 优惠券 ===== */
+    /* ===== ====== ===== */
+
+    let couponPage = 1;
+    let couponTotal = 0;
+    let couponPageSize = 20;
+
+    // 打开门店抽屉时加载优惠券
+    function loadCoupons(page) {
+        couponPage = page || 1;
+        var container = document.getElementById('couponList');
+        if (!container) return;
+        container.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:40px;color:#8c8c8c;">加载中...</td></tr>';
+
+        fetch('', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8'},
+            body: 'action=coupon_list&page=' + couponPage + '&pageSize=' + couponPageSize
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (!data.success) {
+                container.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:40px;color:#ff4d4f;">加载失败：' + (data.message || '') + '</td></tr>';
+                return;
+            }
+            var rows = data.data || [];
+            couponTotal = data.total || 0;
+            if (rows.length === 0) {
+                container.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:40px;color:#8c8c8c;">暂无优惠券数据</td></tr>';
+                document.getElementById('couponPagination').style.display = 'none';
+                return;
+            }
+            var html = '';
+            for (var i = 0; i < rows.length; i++) {
+                var c = rows[i];
+                var typeLabel = c.type === 'discount' ? '折扣' : (c.type === 'cash' ? '代金券' : (c.type === 'shipping' ? '包邮' : c.type));
+                var valueStr = c.type === 'discount' ? (c.value + '折') : '¥' + parseFloat(c.value).toFixed(2);
+                var statusLabel = c.status == 1 ? '<span class="badge badge-success">启用</span>' : '<span class="badge badge-danger">禁用</span>';
+                var timeStr = (c.start_time || '不限') + ' ~ ' + (c.end_time || '不限');
+                var remain = parseInt(c.total) - parseInt(c.received || 0);
+                html += '<tr>' +
+                    '<td>' + c.id + '</td>' +
+                    '<td style="text-align:left;"><strong>' + c.name + '</strong>' + (c.description ? '<br><span style="font-size:11px;color:#8c8c8c;">' + c.description + '</span>' : '') + '</td>' +
+                    '<td>' + typeLabel + '</td>' +
+                    '<td style="font-weight:600;color:#f5222d;">' + valueStr + '</td>' +
+                    '<td>' + (c.min_amount > 0 ? '¥' + parseFloat(c.min_amount).toFixed(2) : '无') + '</td>' +
+                    '<td>' + (c.total > 0 ? remain + '/' + c.total : '不限') + '</td>' +
+                    '<td>' + parseInt(c.received || 0) + '/' + parseInt(c.used || 0) + '</td>' +
+                    '<td style="font-size:12px;">' + timeStr + '</td>' +
+                    '<td>' + statusLabel + '</td>' +
+                    '<td>' +
+                        '<button class="action-btn edit" onclick="openCouponEditor(' + c.id + ')">编辑</button>' +
+                        '<button class="action-btn delete" onclick="deleteCoupon(' + c.id + ')">删除</button>' +
+                    '</td>' +
+                    '</tr>';
+            }
+            container.innerHTML = html;
+
+            // 分页
+            var totalPages = Math.ceil(couponTotal / couponPageSize);
+            if (totalPages <= 1) {
+                document.getElementById('couponPagination').style.display = 'none';
+            } else {
+                document.getElementById('couponPagination').style.display = 'flex';
+                var phtml = '<span class="pag-info">共 ' + couponTotal + ' 条</span>';
+                if (couponPage > 1) phtml += '<span class="pag-btn" onclick="loadCoupons(' + (couponPage - 1) + ')">‹ 上一页</span>';
+                for (var p = Math.max(1, couponPage - 2); p <= Math.min(totalPages, couponPage + 2); p++) {
+                    phtml += '<span class="pag-btn' + (p === couponPage ? ' active' : '') + '" onclick="loadCoupons(' + p + ')">' + p + '</span>';
+                }
+                if (couponPage < totalPages) phtml += '<span class="pag-btn" onclick="loadCoupons(' + (couponPage + 1) + ')">下一页 ›</span>';
+                document.getElementById('couponPagination').innerHTML = phtml;
+            }
+        })
+        .catch(function(err) {
+            container.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:40px;color:#ff4d4f;">请求失败</td></tr>';
+        });
+    }
+
+    // 打开优惠券编辑窗口
+    function openCouponEditor(id) {
+        var title = id ? '编辑优惠券' : '新增优惠券';
+        var html = '<div class="modal-header">' + title + '</div>' +
+            '<div class="modal-body">' +
+            '<div class="form-group"><label>优惠券名称 <span class="required">*</span></label><input type="text" id="couponName" placeholder="如：满100减20"></div>' +
+            '<div class="form-row-2">' +
+                '<div class="form-group"><label>类型</label><select id="couponType"><option value="cash">代金券</option><option value="discount">折扣券</option><option value="shipping">包邮券</option></select></div>' +
+                '<div class="form-group"><label>面值/折扣</label><input type="number" id="couponValue" step="0.01" placeholder="代金券填金额，折扣券填折扣数"></div>' +
+            '</div>' +
+            '<div class="form-row-2">' +
+                '<div class="form-group"><label>最低消费</label><input type="number" id="couponMinAmount" step="0.01" value="0" placeholder="0 表示无限制"></div>' +
+                '<div class="form-group"><label>最高抵扣</label><input type="number" id="couponMaxAmount" step="0.01" value="" placeholder="不填表示不限制"></div>' +
+            '</div>' +
+            '<div class="form-row-2">' +
+                '<div class="form-group"><label>总库存</label><input type="number" id="couponTotal" value="100" placeholder="0 表示不限"></div>' +
+                '<div class="form-group"><label>每人限领</label><input type="number" id="couponPerLimit" value="1" placeholder="每人限领数量"></div>' +
+            '</div>' +
+            '<div class="form-row-2">' +
+                '<div class="form-group"><label>开始时间</label><input type="datetime-local" id="couponStartTime"></div>' +
+                '<div class="form-group"><label>结束时间</label><input type="datetime-local" id="couponEndTime"></div>' +
+            '</div>' +
+            '<div class="form-group"><label>使用说明</label><textarea id="couponInstructions" rows="2" placeholder="可选，使用说明"></textarea></div>' +
+            '<div class="form-group"><label>状态</label><select id="couponStatus"><option value="1">启用</option><option value="0">禁用</option></select></div>' +
+            '</div>' +
+            '<div class="modal-footer">' +
+            '<button class="btn btn-default" onclick="closeCouponModal()">取消</button>' +
+            '<button class="btn btn-primary" onclick="saveCoupon(' + (id || 0) + ')">保存</button>' +
+            '</div>';
+
+        var modal = document.createElement('div');
+        modal.className = 'modal show';
+        modal.id = 'couponModal';
+        modal.innerHTML = '<div class="modal-content" style="max-width:550px;">' + html + '</div>';
+        document.body.appendChild(modal);
+
+        if (id) {
+            fetch('', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8'},
+                body: 'action=coupon_detail&id=' + id
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success && data.data) {
+                    var c = data.data;
+                    document.getElementById('couponName').value = c.name || '';
+                    document.getElementById('couponType').value = c.type || 'cash';
+                    document.getElementById('couponValue').value = c.value || 0;
+                    document.getElementById('couponMinAmount').value = c.min_amount || 0;
+                    document.getElementById('couponMaxAmount').value = c.max_amount || '';
+                    document.getElementById('couponTotal').value = c.total || 0;
+                    document.getElementById('couponPerLimit').value = c.per_limit || 1;
+                    document.getElementById('couponInstructions').value = c.instructions || '';
+                    document.getElementById('couponStatus').value = c.status || 1;
+                    if (c.start_time) document.getElementById('couponStartTime').value = c.start_time.substring(0, 16);
+                    if (c.end_time) document.getElementById('couponEndTime').value = c.end_time.substring(0, 16);
+                }
+            });
+        }
+    }
+
+    function closeCouponModal() {
+        var el = document.getElementById('couponModal');
+        if (el) { el.remove(); }
+    }
+
+    function saveCoupon(id) {
+        var name = document.getElementById('couponName').value.trim();
+        if (!name) { showMessage('请输入优惠券名称', 'error'); return; }
+
+        var data = {
+            action: id ? 'coupon_edit' : 'coupon_add',
+            id: id,
+            name: name,
+            type: document.getElementById('couponType').value,
+            value: parseFloat(document.getElementById('couponValue').value) || 0,
+            min_amount: parseFloat(document.getElementById('couponMinAmount').value) || 0,
+            max_amount: parseFloat(document.getElementById('couponMaxAmount').value) || '',
+            total: parseInt(document.getElementById('couponTotal').value) || 0,
+            per_limit: parseInt(document.getElementById('couponPerLimit').value) || 1,
+            start_time: document.getElementById('couponStartTime').value || '',
+            end_time: document.getElementById('couponEndTime').value || '',
+            instructions: document.getElementById('couponInstructions').value.trim(),
+            status: parseInt(document.getElementById('couponStatus').value) || 1
+        };
+
+        var params = Object.keys(data).map(function(k) {
+            return encodeURIComponent(k) + '=' + encodeURIComponent(data[k]);
+        }).join('&');
+
+        showLoading();
+        fetch('', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8'},
+            body: params
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(res) {
+            hideLoading();
+            if (res.success) {
+                showMessage(res.message || '操作成功', 'success');
+                closeCouponModal();
+                loadCoupons(couponPage);
+            } else {
+                showMessage('❌ ' + (res.message || '操作失败'), 'error');
+            }
+        })
+        .catch(function(err) { hideLoading(); showMessage('❌ 请求失败：' + err.message, 'error'); });
+    }
+
+    function deleteCoupon(id) {
+        if (!confirm('确定要删除该优惠券吗？')) return;
+        showLoading();
+        fetch('', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8'},
+            body: 'action=coupon_delete&id=' + id
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(res) {
+            hideLoading();
+            if (res.success) {
+                showMessage('删除成功', 'success');
+                loadCoupons(couponPage);
+            } else {
+                showMessage('❌ ' + (res.message || '删除失败'), 'error');
+            }
+        })
+        .catch(function(err) { hideLoading(); showMessage('❌ 请求失败：' + err.message, 'error'); });
+    }
+
+    /* 在打开门店抽屉时，切换到福利tab自动加载优惠券 */
+    /* 在 switchDrawerTab 中触发加载 */
+    var origShowTab = window.showTab || function(){};
+    /* 活动管理子Tab切换 */
+    function switchBenefitTab(subtab) {
+        // 切换tab样式
+        var tabs = document.querySelectorAll('.benefit-sub-tab');
+        for (var i = 0; i < tabs.length; i++) {
+            var t = tabs[i];
+            if (t.getAttribute('data-subtab') === subtab) {
+                t.style.background = '#1890ff';
+                t.style.color = '#fff';
+            } else {
+                t.style.background = '#f5f5f5';
+                t.style.color = '#595959';
+            }
+        }
+        // 切换内容区
+        var sections = document.querySelectorAll('.benefit-section');
+        for (var j = 0; j < sections.length; j++) {
+            sections[j].style.display = sections[j].getAttribute('data-subtab') === subtab ? 'block' : 'none';
+        }
+        // 加载对应数据
+        if (subtab === 'coupon') loadCoupons(1);
+        else if (subtab === 'seckill') loadSeckills(1);
+    }
+
+    /* 监听活动管理主Tab点击 - 默认加载优惠券 */
+    var tabHandlers = window.tabHandlers || {};
+    window.tabHandlers = tabHandlers;
+    tabHandlers.benefits = function() { switchBenefitTab('coupon'); };
+
+    document.addEventListener('click', function(e) {
+        var tab = e.target.closest && e.target.closest('.drawer-tab[data-tab="benefits"]');
+        if (tab) {
+            setTimeout(function() { switchBenefitTab('coupon'); }, 100);
+        }
+    });
+
+    /* ===== ====== ===== */
+    /* ===== 秒杀 ===== */
+    /* ===== ====== ===== */
+
+    var seckillPage = 1, seckillTotal = 0, seckillPageSize = 20;
+
+    function loadSeckills(page) {
+        seckillPage = page || 1;
+        var container = document.getElementById('seckillList');
+        if (!container) return;
+        container.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:40px;color:#8c8c8c;">加载中...</td></tr>';
+
+        fetch('', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8'},
+            body: 'action=seckill_list&page=' + seckillPage + '&pageSize=' + seckillPageSize
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (!data.success) {
+                container.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:40px;color:#ff4d4f;">加载失败</td></tr>';
+                return;
+            }
+            var rows = data.data || [];
+            seckillTotal = data.total || 0;
+            if (rows.length === 0) {
+                container.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:40px;color:#8c8c8c;">暂无秒杀活动</td></tr>';
+                document.getElementById('seckillPagination').style.display = 'none';
+                return;
+            }
+            var html = '';
+            for (var i = 0; i < rows.length; i++) {
+                var s = rows[i];
+                var statusLabel = s.status == 1 ? '<span class="badge badge-success">启用</span>' : '<span class="badge badge-danger">禁用</span>';
+                html += '<tr>' +
+                    '<td>' + s.id + '</td>' +
+                    '<td style="text-align:left;"><strong>' + escapeHtml(s.name) + '</strong>' + (s.description ? '<br><span style="font-size:11px;color:#8c8c8c;">' + escapeHtml(s.description) + '</span>' : '') + '</td>' +
+                    '<td style="font-weight:600;color:#f5222d;">¥' + parseFloat(s.seckill_price).toFixed(2) + '</td>' +
+                    '<td>¥' + parseFloat(s.original_price).toFixed(2) + '</td>' +
+                    '<td>' + (parseInt(s.stock) - parseInt(s.sold || 0)) + '/' + s.stock + '</td>' +
+                    '<td>' + (s.limit_buy || 1) + '件</td>' +
+                    '<td style="font-size:12px;">' + (s.start_time || '-') + '</td>' +
+                    '<td style="font-size:12px;">' + (s.end_time || '-') + '</td>' +
+                    '<td>' + statusLabel + '</td>' +
+                    '<td>' +
+                        '<button class="action-btn edit" onclick="openSeckillEditor(' + s.id + ')">编辑</button>' +
+                        '<button class="action-btn delete" onclick="deleteSeckill(' + s.id + ')">删除</button>' +
+                    '</td>' +
+                    '</tr>';
+            }
+            container.innerHTML = html;
+
+            var totalPages = Math.ceil(seckillTotal / seckillPageSize);
+            if (totalPages <= 1) {
+                document.getElementById('seckillPagination').style.display = 'none';
+            } else {
+                document.getElementById('seckillPagination').style.display = 'flex';
+                var phtml = '<span class="pag-info">共 ' + seckillTotal + ' 条</span>';
+                if (seckillPage > 1) phtml += '<span class="pag-btn" onclick="loadSeckills(' + (seckillPage - 1) + ')">‹ 上一页</span>';
+                for (var p = Math.max(1, seckillPage - 2); p <= Math.min(totalPages, seckillPage + 2); p++) {
+                    phtml += '<span class="pag-btn' + (p === seckillPage ? ' active' : '') + '" onclick="loadSeckills(' + p + ')">' + p + '</span>';
+                }
+                if (seckillPage < totalPages) phtml += '<span class="pag-btn" onclick="loadSeckills(' + (seckillPage + 1) + ')">下一页 ›</span>';
+                document.getElementById('seckillPagination').innerHTML = phtml;
+            }
+        })
+        .catch(function(err) {
+            container.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:40px;color:#ff4d4f;">请求失败</td></tr>';
+        });
+    }
+
+    function openSeckillEditor(id) {
+        var title = id ? '编辑秒杀活动' : '新增秒杀活动';
+        var html = '<div class="modal-header">' + title + '</div>' +
+            '<div class="modal-body">' +
+            '<div class="form-group"><label>活动名称 <span class="required">*</span></label><input type="text" id="skName" placeholder="如：暑期特惠秒杀"></div>' +
+            '<div class="form-row-2">' +
+                '<div class="form-group"><label>秒杀价</label><input type="number" id="skPrice" step="0.01" value="0" placeholder="秒杀价格"></div>' +
+                '<div class="form-group"><label>原价</label><input type="number" id="skOriginal" step="0.01" value="0" placeholder="商品原价"></div>' +
+            '</div>' +
+            '<div class="form-row-2">' +
+                '<div class="form-group"><label>库存</label><input type="number" id="skStock" value="100" placeholder="秒杀库存"></div>' +
+                '<div class="form-group"><label>每人限购</label><input type="number" id="skLimit" value="1" placeholder="每人限购数量"></div>' +
+            '</div>' +
+            '<div class="form-row-2">' +
+                '<div class="form-group"><label>开始时间</label><input type="datetime-local" id="skStartTime"></div>' +
+                '<div class="form-group"><label>结束时间</label><input type="datetime-local" id="skEndTime"></div>' +
+            '</div>' +
+            '<div class="form-group"><label>活动说明</label><textarea id="skDesc" rows="2" placeholder="可选"></textarea></div>' +
+            '<div class="form-group"><label>状态</label><select id="skStatus"><option value="1">启用</option><option value="0">禁用</option></select></div>' +
+            '</div>' +
+            '<div class="modal-footer">' +
+            '<button class="btn btn-default" onclick="closeSeckillModal()">取消</button>' +
+            '<button class="btn btn-primary" onclick="saveSeckill(' + (id || 0) + ')">保存</button>' +
+            '</div>';
+
+        var modal = document.createElement('div');
+        modal.className = 'modal show';
+        modal.id = 'seckillModal';
+        modal.innerHTML = '<div class="modal-content" style="max-width:550px;">' + html + '</div>';
+        document.body.appendChild(modal);
+
+        if (id) {
+            fetch('', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8'},
+                body: 'action=seckill_detail&id=' + id
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success && data.data) {
+                    var s = data.data;
+                    document.getElementById('skName').value = s.name || '';
+                    document.getElementById('skPrice').value = s.seckill_price || 0;
+                    document.getElementById('skOriginal').value = s.original_price || 0;
+                    document.getElementById('skStock').value = s.stock || 0;
+                    document.getElementById('skLimit').value = s.limit_buy || 1;
+                    document.getElementById('skStatus').value = s.status || 1;
+                    document.getElementById('skDesc').value = s.description || '';
+                    if (s.start_time) document.getElementById('skStartTime').value = s.start_time.substring(0, 16);
+                    if (s.end_time) document.getElementById('skEndTime').value = s.end_time.substring(0, 16);
+                }
+            });
+        }
+    }
+
+    function closeSeckillModal() {
+        var el = document.getElementById('seckillModal');
+        if (el) el.remove();
+    }
+
+    function saveSeckill(id) {
+        var name = document.getElementById('skName').value.trim();
+        if (!name) { showMessage('请输入活动名称', 'error'); return; }
+
+        var data = {
+            action: id ? 'seckill_edit' : 'seckill_add',
+            id: id,
+            name: name,
+            seckill_price: parseFloat(document.getElementById('skPrice').value) || 0,
+            original_price: parseFloat(document.getElementById('skOriginal').value) || 0,
+            stock: parseInt(document.getElementById('skStock').value) || 0,
+            limit_buy: parseInt(document.getElementById('skLimit').value) || 1,
+            start_time: document.getElementById('skStartTime').value || '',
+            end_time: document.getElementById('skEndTime').value || '',
+            description: document.getElementById('skDesc').value.trim(),
+            status: parseInt(document.getElementById('skStatus').value) || 1
+        };
+
+        var params = Object.keys(data).map(function(k) {
+            return encodeURIComponent(k) + '=' + encodeURIComponent(data[k]);
+        }).join('&');
+
+        showLoading();
+        fetch('', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8'},
+            body: params
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(res) {
+            hideLoading();
+            if (res.success) {
+                showMessage(res.message || '操作成功', 'success');
+                closeSeckillModal();
+                loadSeckills(seckillPage);
+            } else {
+                showMessage('❌ ' + (res.message || '操作失败'), 'error');
+            }
+        })
+        .catch(function(err) { hideLoading(); showMessage('❌ 请求失败：' + err.message, 'error'); });
+    }
+
+    function deleteSeckill(id) {
+        if (!confirm('确定要删除该秒杀活动吗？')) return;
+        showLoading();
+        fetch('', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8'},
+            body: 'action=seckill_delete&id=' + id
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(res) {
+            hideLoading();
+            if (res.success) {
+                showMessage('删除成功', 'success');
+                loadSeckills(seckillPage);
+            } else {
+                showMessage('❌ ' + (res.message || '删除失败'), 'error');
+            }
+        })
+        .catch(function(err) { hideLoading(); showMessage('❌ 请求失败：' + err.message, 'error'); });
     }
     /* ===== ====== ===== */
     /* ===== ====== ===== */
