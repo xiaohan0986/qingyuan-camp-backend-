@@ -232,7 +232,7 @@ $csrfToken = CsrfHelper::generate();
     z-index: 1000;
     transition: width 0.3s ease, padding 0.3s ease !important;
     border-radius: 16px;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+    box-shadow: 4px 0 20px rgba(0,0,0,0.08), 0 0 16px rgba(0,0,0,0.04);
 }
 
 .sidebar.collapsed {

@@ -306,6 +306,127 @@ $decoration = [
     padding: 12px 16px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
+
+/* 首页背景图 */
+.bg-upload-area {
+    border: 2px dashed #d9d9d9;
+    border-radius: 12px;
+    padding: 48px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s;
+    background: #fafafa;
+    margin-bottom: 24px;
+}
+.bg-upload-area:hover {
+    border-color: #1890ff;
+    background: #f0f5ff;
+}
+.bg-upload-area.dragover {
+    border-color: #1890ff;
+    background: #e6f7ff;
+}
+.bg-upload-area .upload-icon {
+    font-size: 48px;
+    margin-bottom: 12px;
+}
+.bg-upload-area .upload-text {
+    font-size: 16px;
+    color: #595959;
+    font-weight: 600;
+}
+.bg-upload-area .upload-hint {
+    font-size: 13px;
+    color: #8c8c8c;
+    margin-top: 8px;
+}
+.bg-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+}
+.bg-card {
+    position: relative;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 3px solid #f0f0f0;
+    transition: all 0.3s;
+    background: #f5f5f5;
+    aspect-ratio: 16 / 9;
+    cursor: pointer;
+}
+.bg-card:hover {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+}
+.bg-card.active {
+    border-color: #1890ff;
+    box-shadow: 0 0 0 3px rgba(24,144,255,0.2);
+}
+.bg-card img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.bg-card .bg-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    opacity: 0;
+    transition: opacity 0.3s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+}
+.bg-card:hover .bg-overlay {
+    opacity: 1;
+}
+.bg-card .bg-overlay button {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.bg-card .bg-select-btn {
+    background: #1890ff;
+    color: white;
+}
+.bg-card .bg-select-btn:hover {
+    background: #096dd9;
+}
+.bg-card .bg-delete-btn {
+    background: #ff4d4f;
+    color: white;
+}
+.bg-card .bg-delete-btn:hover {
+    background: #cf1322;
+}
+.bg-card .bg-active-badge {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background: #1890ff;
+    color: white;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    z-index: 2;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+.bg-empty {
+    text-align: center;
+    padding: 40px;
+    color: #8c8c8c;
+}
+.bg-empty .empty-icon {
+    font-size: 48px;
+    margin-bottom: 12px;
+}
 </style>
 
 <div class="decoration-container">
@@ -479,6 +600,36 @@ $decoration = [
             </div>
         </form>
     </div>
+
+    <!-- 首页背景图 -->
+    <div class="preview-section">
+        <div class="section-header">
+            <div class="section-icon">🖼️</div>
+            <div>
+                <div class="section-title">首页背景图</div>
+                <div class="section-desc">设置小程序首页顶部背景图，支持上传多张图片并选择一张为当前背景</div>
+            </div>
+        </div>
+
+        <div class="bg-upload-area" id="bgUploadArea">
+            <div class="upload-icon">📤</div>
+            <div class="upload-text">点击或拖拽上传图片</div>
+            <div class="upload-hint">支持 JPG / PNG / GIF / WebP，单张不超过 10MB</div>
+            <input type="file" id="bgFileInput" accept="image/jpeg,image/png,image/gif,image/webp" style="display:none" multiple>
+        </div>
+
+        <div id="bgLoading" style="display:none; text-align:center; padding:24px;">
+            <div style="font-size:32px; margin-bottom:8px;">⏳</div>
+            <div style="color:#8c8c8c;">上传中，请稍候…</div>
+        </div>
+
+        <div id="bgGallery" class="bg-gallery">
+            <div class="bg-empty" id="bgEmpty">
+                <div class="empty-icon">🏞️</div>
+                <div>暂无背景图，请上传</div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -533,6 +684,150 @@ document.querySelector('input[name="logo_text"]').addEventListener('input', func
     document.querySelectorAll('.live-preview .preview-sidebar div:first-child, .live-preview .preview-header div:first-child')
         .forEach(el => el.textContent = value || '🚀');
 });
+
+/* ========== 首页背景图管理 ========== */
+const bgUploadArea = document.getElementById('bgUploadArea');
+const bgFileInput = document.getElementById('bgFileInput');
+const bgLoading = document.getElementById('bgLoading');
+const bgGallery = document.getElementById('bgGallery');
+const bgEmpty = document.getElementById('bgEmpty');
+
+// 点击上传
+bgUploadArea.addEventListener('click', () => bgFileInput.click());
+
+// 拖拽上传
+bgUploadArea.addEventListener('dragover', e => {
+    e.preventDefault();
+    bgUploadArea.classList.add('dragover');
+});
+bgUploadArea.addEventListener('dragleave', () => {
+    bgUploadArea.classList.remove('dragover');
+});
+bgUploadArea.addEventListener('drop', e => {
+    e.preventDefault();
+    bgUploadArea.classList.remove('dragover');
+    if (e.dataTransfer.files.length > 0) {
+        uploadBgFile(e.dataTransfer.files[0]);
+    }
+});
+
+// 选择文件上传
+bgFileInput.addEventListener('change', function() {
+    if (this.files.length > 0) {
+        uploadBgFile(this.files[0]);
+    }
+});
+
+function uploadBgFile(file) {
+    if (!file) return;
+    if (!file.type.match(/^image\//)) {
+        alert('请选择图片文件');
+        return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+        alert('图片大小不能超过 10MB');
+        return;
+    }
+
+    bgLoading.style.display = 'block';
+    bgUploadArea.style.display = 'none';
+
+    const formData = new FormData();
+    formData.append('action', 'upload');
+    formData.append('file', file);
+
+    fetch('api/decoration_bg.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(res => {
+        if (res.success) {
+            loadBgImages();
+        } else {
+            alert('上传失败：' + (res.message || '未知错误'));
+        }
+    })
+    .catch(err => {
+        alert('上传失败：网络错误');
+        console.error(err);
+    })
+    .finally(() => {
+        bgLoading.style.display = 'none';
+        bgUploadArea.style.display = 'block';
+        bgFileInput.value = '';
+    });
+}
+
+function loadBgImages() {
+    fetch('api/decoration_bg.php?action=list')
+    .then(r => r.json())
+    .then(res => {
+        if (!res.success) return;
+        renderBgGallery(res.data || []);
+    });
+}
+
+function renderBgGallery(items) {
+    bgGallery.innerHTML = '';
+    if (items.length === 0) {
+        bgGallery.appendChild(bgEmpty);
+        return;
+    }
+    items.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'bg-card' + (item.is_active == 1 ? ' active' : '');
+        card.innerHTML = `
+            ${item.is_active == 1 ? '<div class="bg-active-badge">✅ 当前背景</div>' : ''}
+            <img src="${item.image_url}" alt="背景图" loading="lazy">
+            <div class="bg-overlay">
+                ${item.is_active != 1 ? `<button class="bg-select-btn" onclick="setActiveBg(${item.id})">✅ 设为首页图</button>` : ''}
+                <button class="bg-delete-btn" onclick="deleteBg(${item.id})">🗑️ 删除</button>
+            </div>
+        `;
+        bgGallery.appendChild(card);
+    });
+}
+
+function setActiveBg(id) {
+    const formData = new FormData();
+    formData.append('action', 'set_active');
+    formData.append('id', id);
+    fetch('api/decoration_bg.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(res => {
+        if (res.success) {
+            loadBgImages();
+        } else {
+            alert('设置失败：' + (res.message || '未知错误'));
+        }
+    });
+}
+
+function deleteBg(id) {
+    if (!confirm('确定要删除这张背景图吗？')) return;
+    const formData = new FormData();
+    formData.append('action', 'delete');
+    formData.append('id', id);
+    fetch('api/decoration_bg.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(res => {
+        if (res.success) {
+            loadBgImages();
+        } else {
+            alert('删除失败：' + (res.message || '未知错误'));
+        }
+    });
+}
+
+// 页面加载后加载已有背景图
+loadBgImages();
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php';
